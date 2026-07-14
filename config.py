@@ -52,7 +52,9 @@ CANONICAL_FIELDS_2 = {
     "cash_flag": "Փաստ․ համար",
     "blacklist_flag": "Սև ցուցակի անտեսմամբ",
     "entry_date": "Մուտքի ամս․",
-    "user": "Օգտագործող"
+    "user": "Օգտագործող",
+    "debit_name": "Դեբետ հաշիվ",
+    "credit_name": "Կրեդիտ հաշիվ",
 }
 
 DEFAULT_RULES: Dict[str, Dict[str, Any]] = {
