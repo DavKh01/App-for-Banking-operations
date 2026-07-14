@@ -1,0 +1,40 @@
+{
+  "risk_levels": {
+    "Low": [
+      0,
+      24
+    ],
+    "Medium": [
+      25,
+      49
+    ],
+    "High": [
+      50,
+      74
+    ],
+    "Critical": [
+      75,
+      100
+    ]
+  },
+  "rules": {
+    "large_amount": {
+      "enabled": true,
+      "weight": 18,
+      "threshold": 1000000
+    },
+    "round_amount": {
+      "enabled": true,
+      "weight": 8,
+      "threshold": 1000
+    },
+    "cash_transaction": {
+      "enabled": true,
+      "weight": 12
+    },
+    "blacklist_flag": {
+      "enabled": true,
+      "weight": 25
+    }
+  }
+}
