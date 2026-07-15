@@ -40,17 +40,28 @@ CANONICAL_FIELDS = {
 CANONICAL_FIELDS_2 = {
     "doc_type": "Տիպ",
     "doc_state": "Կարգավիճակ",
+
     "transaction_date": "Գործ. ամսաթիվ",
     "amount": "Գումար(ըստ համակարգի)",
+
     "currency": "Արժույթ",
     "customer_id": "Վճարող",
+
     "doc_customer": "Վճարող",
+
     "note": "Նշումներ",
+
+
     "cash_register": "Դրամարկղ",
+
     "debit_account": "Դեբետ հաշիվ",
     "credit_account": "Կրեդիտ հաշիվ",
+
     "branch": "Մասնաճյուղ",
+
+
     "cash_flag": "Փաստ. համար",
+
     "entry_date": "Մուտքի ամս.",
     "user": "Օգտագործող",
     "blacklist_flag": "Սև ցուցակի անտեսմամբ",
@@ -60,7 +71,6 @@ DEFAULT_RULES: Dict[str, Dict[str, Any]] = {
     "large_amount": {"enabled": True, "weight": 18, "threshold": 25000000, "description": "Transaction amount exceeds threshold."},
     "round_amount": {"enabled": True, "weight": 8, "threshold": 100000, "description": "Amount is a large round number."},
     "cash_transaction": {"enabled": True, "weight": 12, "threshold": None, "description": "Cash-related transaction."},
-    "blacklist_flag": {"enabled": True, "weight": 25, "threshold": None, "description": "Blacklist or blacklist-ignore flag detected."},
     "night_activity": {"enabled": True, "weight": 8, "threshold": None, "description": "Transaction occurred at night."},
     "weekend_activity": {"enabled": True, "weight": 6, "threshold": None, "description": "Transaction occurred on weekend."},
     "duplicate_document": {"enabled": True, "weight": 10, "threshold": None, "description": "Repeated document number."},

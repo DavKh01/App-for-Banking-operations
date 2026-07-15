@@ -51,8 +51,11 @@ def sidebar_mapping(df: pd.DataFrame) -> Dict[str, str]:
         )
 
     mapping = normalize_mapping(mapping)
+
     if "debit_name" not in mapping and "debit_account" in mapping:
         mapping["debit_name"] = mapping["debit_account"]
+
+
     if "credit_name" not in mapping and "credit_account" in mapping:
         mapping["credit_name"] = mapping["credit_account"]
     st.session_state["mapping"] = mapping

@@ -34,7 +34,6 @@ class RiskEngine:
         credit = get_col(mapping, "credit_account")
         doc = get_col(mapping, "document_number")
         cash = get_col(mapping, "cash_flag")
-        blacklist = get_col(mapping, "blacklist_flag")
         currency = get_col(mapping, "currency")
         customer = get_col(mapping, "customer_id") or debit
         debit_balance = get_col(mapping, "debit_balance")
@@ -59,8 +58,7 @@ class RiskEngine:
             apply_rule("round_amount", (amt >= round_threshold) & (amt % round_threshold == 0))
         if cash:
             apply_rule("cash_transaction", out[cash].notna())
-        if blacklist:
-            apply_rule("blacklist_flag", out[blacklist].astype(str).str.lower().str.contains("1|true|yes|black", regex=True, na=False))
+
         if date_col:
             apply_rule("night_activity", dates.dt.hour.between(0, 5))
             apply_rule("weekend_activity", dates.dt.weekday >= 5)
