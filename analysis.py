@@ -17,7 +17,6 @@ class AnalyticsEngine:
         self.mapping = mapping
         self.amount_col = get_col(mapping, "amount")
         self.date_col = get_col(mapping, "transaction_date")
-
     def prepared(self) -> pd.DataFrame:
         df = self.df.copy()
         if self.amount_col:
@@ -130,24 +129,26 @@ class AnalyticsEngine:
         if doc:
             dup_docs = df[df[doc].notna() & df.duplicated(doc, keep=False)].sort_values(doc)
             results["Repeated document numbers"] = dup_docs.head(1000)
-            if customer and amount and "_date" in df:
-                same_amount_day = (
-                    df.groupby([
-                        customer,
-                        doc,
-                        df["_date"].dt.date,
-                        amount
-                    ])
-                    .size()
-                    .reset_index(name="transaction_count")
-                )
-                same_amount_day = (
-                    same_amount_day[
-                        same_amount_day["transaction_count"] >= 3
-                        ]
-                    .sort_values("transaction_count", ascending=False)
-                )
-                results["Repeated same amount (same day)"] = same_amount_day.head(1000)
+        if customer and amount and "_date" in df:
+            group_cols = [
+                customer,
+                *([doc] if doc else []),
+                df["_date"].dt.date,
+                amount,
+            ]
+
+            same_amount_day = (
+                df.groupby(group_cols)
+                .size()
+                .reset_index(name="transaction_count")
+            )
+            same_amount_day = (
+                same_amount_day[
+                    same_amount_day["transaction_count"] >= 3
+                    ]
+                .sort_values("transaction_count", ascending=False)
+            )
+            results["Repeated same amount (same day)"] = same_amount_day.head(1000)
         if debit and credit:
             results["Top senders"] = df.groupby(debit_name).size().sort_values(ascending=False).head(50).reset_index(name="transaction_count")
             results["Top receivers"] = df.groupby(credit_name).size().sort_values(ascending=False).head(50).reset_index(name="transaction_count")

@@ -40,28 +40,17 @@ CANONICAL_FIELDS = {
 CANONICAL_FIELDS_2 = {
     "doc_type": "Տիպ",
     "doc_state": "Կարգավիճակ",
-
-    "transaction_date": "Գործ. ամսաթիվ",
+    "transaction_date": "Մուտքի ամս.",
     "amount": "Գումար(ըստ համակարգի)",
-
     "currency": "Արժույթ",
     "customer_id": "Վճարող",
-
     "doc_customer": "Վճարող",
-
     "note": "Նշումներ",
-
-
     "cash_register": "Դրամարկղ",
-
     "debit_account": "Դեբետ հաշիվ",
     "credit_account": "Կրեդիտ հաշիվ",
-
     "branch": "Մասնաճյուղ",
-
-
     "cash_flag": "Փաստ. համար",
-
     "entry_date": "Մուտքի ամս.",
     "user": "Օգտագործող",
     "blacklist_flag": "Սև ցուցակի անտեսմամբ",
