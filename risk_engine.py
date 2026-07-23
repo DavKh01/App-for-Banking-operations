@@ -73,10 +73,7 @@ class RiskEngine:
         if currency and customer:
             ccnt = out.groupby(customer)[currency].transform("nunique")
             apply_rule("multiple_currencies", ccnt >= float(self.rules["multiple_currencies"].get("threshold", 2)))
-        if debit_balance and amount_col:
-            bal = safe_numeric(out[debit_balance]).abs()
-            threshold = float(self.rules["balance_anomaly"].get("threshold", .9))
-            apply_rule("balance_anomaly", (bal > 0) & ((amt / bal) >= threshold))
+
 
         out["risk_score"] = score.clip(0, 100).round(2)
         out["risk_level"] = out["risk_score"].apply(self._level)

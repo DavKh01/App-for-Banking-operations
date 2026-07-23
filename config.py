@@ -66,7 +66,6 @@ DEFAULT_RULES: Dict[str, Dict[str, Any]] = {
     "high_frequency_sender": {"enabled": True, "weight": 14, "threshold": 20, "description": "Sender has unusually high transaction count."},
     "many_counterparties": {"enabled": True, "weight": 14, "threshold": 15, "description": "Sender interacts with many counterparties."},
     "multiple_currencies": {"enabled": True, "weight": 10, "threshold": 2, "description": "Customer/account uses multiple currencies."},
-    "balance_anomaly": {"enabled": True, "weight": 12, "threshold": 0.9, "description": "Amount unusually large versus available EOD balance."},
 }
 
 @dataclass
