@@ -159,11 +159,19 @@ class AnalyticsEngine:
             one_to_many = df.groupby(debit)[credit].nunique().sort_values(ascending=False).head(50).reset_index(name="unique_receivers")
             results["One-to-many transfers"] = one_to_many
         if customer and amount:
-            results["High-risk customers by turnover"] = df.groupby(customer)[amount].agg(transaction_count="count", turnover=lambda s: s.abs().sum(), max_amount="max").sort_values("turnover", ascending=False).head(100).reset_index()
+            group_cols = [
+                customer,
+                *([doc] if doc else [])
+            ]
+            results["High-risk customers by turnover"] = df.groupby(group_cols)[amount].agg(transaction_count="count", turnover=lambda s: s.abs().sum(), max_amount="max").sort_values("turnover", ascending=False).head(100).reset_index()
         if branch and amount:
             results["High-risk branches by turnover"] = df.groupby(branch)[amount].agg(transaction_count="count", turnover=lambda s: s.abs().sum()).sort_values("turnover", ascending=False).head(100).reset_index()
         if currency and customer:
-            results["Cross-currency activity"] = df.groupby(customer)[currency].nunique().sort_values(ascending=False).head(100).reset_index(name="currency_count")
+            group_cols = [
+                customer,
+                *([doc] if doc else [])
+            ]
+            results["Cross-currency activity"] = df.groupby(group_cols)[currency].nunique().sort_values(ascending=False).head(100).reset_index(name="currency_count")
         if "_date" in df:
             results["Weekend transactions"] = df[df["_date"].dt.weekday >= 5].head(1000)
             results["Night transactions"] = df[df["_date"].dt.hour.between(0, 5)].head(10000)
@@ -176,8 +184,12 @@ class AnalyticsEngine:
                 ]
             results["Large cash transactions"] = cash_large.head(1000)
         if customer and branch:
+            group_cols = [
+                customer,
+                *([doc] if doc else [])
+            ]
             branch_use = (
-                df.groupby(customer)[branch]
+                df.groupby(group_cols)[branch]
                 .nunique()
                 .reset_index(name="branch_count")
             )
