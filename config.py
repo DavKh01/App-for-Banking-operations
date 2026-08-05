@@ -29,11 +29,7 @@ CANONICAL_FIELDS = {
     "doc_type": "Doc Type",
     "doc_state": "Doc State",
     "cash_flag": "Doc Cash",
-    "blacklist_flag": "With Black List Ignor",
-    "entry_date": "Entry Date",
     "user": "User",
-    "debit_balance": "Debit Acc EOD Bal",
-    "credit_balance": "Credit Acc EOD Bal",
     "debit_name": "Debit Acc Name",
     "credit_name": "Credit Acc Name",
 }
@@ -44,16 +40,13 @@ CANONICAL_FIELDS_2 = {
     "amount": "Գումար(ըստ համակարգի)",
     "currency": "Արժույթ",
     "customer_id": "Վճարող",
-    "doc_customer": "Վճարող",
     "note": "Նշումներ",
     "cash_register": "Դրամարկղ",
     "debit_account": "Դեբետ հաշիվ",
     "credit_account": "Կրեդիտ հաշիվ",
     "branch": "Մասնաճյուղ",
     "cash_flag": "Փաստ. համար",
-    "entry_date": "Մուտքի ամս.",
     "user": "Օգտագործող",
-    "blacklist_flag": "Սև ցուցակի անտեսմամբ",
 }
 
 DEFAULT_RULES: Dict[str, Dict[str, Any]] = {

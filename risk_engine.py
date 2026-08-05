@@ -36,7 +36,6 @@ class RiskEngine:
         cash = get_col(mapping, "cash_flag")
         currency = get_col(mapping, "currency")
         customer = get_col(mapping, "customer_id") or debit
-        debit_balance = get_col(mapping, "debit_balance")
 
         amt = safe_numeric(out[amount_col]).abs() if amount_col else pd.Series(0, index=out.index)
         dates = safe_datetime(out[date_col]) if date_col else pd.Series(pd.NaT, index=out.index)

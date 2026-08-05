@@ -35,7 +35,6 @@ def sidebar_mapping(df: pd.DataFrame) -> Dict[str, str]:
     options = ["<Not available>"] + list(df.columns)
     mapping = {}
     canon = CANONICAL_FIELDS if df.columns[0] == "Doc Type" else CANONICAL_FIELDS_2
-
     column_map = {c.strip().lower(): c for c in df.columns}
 
     for key, label in canon.items():
@@ -95,6 +94,7 @@ def load_page():
         except Exception as exc:
             st.error(f"Loading failed: {exc}")
     df = pd.read_excel(uploaded,skiprows=skiprows, nrows=100 if nrows == 0 else nrows)
+    #mv = sidebar_mapping(df)
     if df is not None:
         st.subheader("Preview")
         st.dataframe(df.head(100).astype(str), width='content')
@@ -121,7 +121,7 @@ def cleaning_page(df):
     if submitted:
         if remove_dups: prep.remove_duplicates(dup_subset or None)
         if remove_fees: prep.remove_rows("միջնորդավճար")
-        if remove_loans: prep.remove_rows("վարկի մարում")
+        if remove_loans: prep.remove_rows("վարկ")
         if trim_cols: prep.trim_spaces(trim_cols)
         if case_cols: prep.change_case(case_cols, case_mode)
         if drop_missing_cols: prep.remove_missing(drop_missing_cols)
