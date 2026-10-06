@@ -127,8 +127,11 @@ class AnalyticsEngine:
             results["Large transactions"] = df[df[amount] >= q99].sort_values(amount, ascending=False).head(1000)
             results["Round amounts"] = df[(df[amount].abs() >= 100000) & (df[amount].abs() % 100000 == 0)].head(1000)
         if doc:
-            dup_docs = df[df[doc].notna() & df.duplicated(doc, keep=False)].sort_values(doc)
-            results["Repeated document numbers"] = dup_docs.head(1000)
+            dup_df = df[df[doc].notna() & df.duplicated(doc, keep=False)].copy()
+            dup_df["_doc_count"] = dup_df.groupby(doc)[doc].transform("size")
+            dup_docs = dup_df.sort_values(by=["_doc_count", doc], ascending=[False, True])
+            dup_docs = dup_docs.drop(columns=["_doc_count"])
+            results["High-frequency customers"] = dup_docs.head(2000)
         if customer and amount and "_date" in df:
             group_cols = [
                 customer,

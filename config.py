@@ -8,9 +8,9 @@ from typing import Dict, List, Any
 APP_TITLE = "Banking AML, Fraud & Risk Analytics"
 APP_ICON = "🏦"
 DEFAULT_RISK_LEVELS = {
-    "Low": (0, 24),
-    "Medium": (25, 49),
-    "High": (50, 74),
+    "Low": (0, 25),
+    "Medium": (25, 50),
+    "High": (50, 75),
     "Critical": (75, 100),
 }
 
@@ -50,15 +50,14 @@ CANONICAL_FIELDS_2 = {
 }
 
 DEFAULT_RULES: Dict[str, Dict[str, Any]] = {
-    "large_amount": {"enabled": True, "weight": 18, "threshold": 25000000, "description": "Transaction amount exceeds threshold."},
-    "round_amount": {"enabled": True, "weight": 8, "threshold": 100000, "description": "Amount is a large round number."},
-    "cash_transaction": {"enabled": True, "weight": 12, "threshold": None, "description": "Cash-related transaction."},
-    "night_activity": {"enabled": True, "weight": 8, "threshold": None, "description": "Transaction occurred at night."},
-    "weekend_activity": {"enabled": True, "weight": 6, "threshold": None, "description": "Transaction occurred on weekend."},
-    "duplicate_document": {"enabled": True, "weight": 10, "threshold": None, "description": "Repeated document number."},
+    "large_amount": {"enabled": True, "weight": 20, "threshold": 25000000, "description": "Transaction amount exceeds threshold."},
+    "round_amount": {"enabled": True, "weight": 10, "threshold": 100000, "description": "Amount is a large round number."},
+    "cash_transaction": {"enabled": True, "weight": 14, "threshold": None, "description": "Cash-related transaction."},
+    "night_activity": {"enabled": True, "weight": 10, "threshold": None, "description": "Transaction occurred at night."},
+    "weekend_activity": {"enabled": True, "weight": 5, "threshold": None, "description": "Transaction occurred on weekend."},
     "high_frequency_sender": {"enabled": True, "weight": 14, "threshold": 20, "description": "Sender has unusually high transaction count."},
-    "many_counterparties": {"enabled": True, "weight": 14, "threshold": 15, "description": "Sender interacts with many counterparties."},
-    "multiple_currencies": {"enabled": True, "weight": 10, "threshold": 2, "description": "Customer/account uses multiple currencies."},
+    "many_counterparties": {"enabled": True, "weight": 15, "threshold": 15, "description": "Sender interacts with many counterparties."},
+    "multiple_currencies": {"enabled": True, "weight": 12, "threshold": 2, "description": "Customer/account uses multiple currencies."},
 }
 
 @dataclass

@@ -9,6 +9,7 @@ from typing import Dict
 import pandas as pd
 import streamlit as st
 import plotly.express as px
+from streamlit import title
 
 from config import APP_TITLE, APP_ICON, CANONICAL_FIELDS, DEFAULT_RULES, CANONICAL_FIELDS_2
 from data_loader import DataLoader, LoadOptions
@@ -97,7 +98,7 @@ def load_page():
     #mv = sidebar_mapping(df)
     if df is not None:
         st.subheader("Preview")
-        st.dataframe(df.head(100).astype(str), width='content')
+        st.dataframe(df.head(100).astype(str), width='stretch')
 
 def cleaning_page(df):
     st.header("2. Data Cleaning")
@@ -130,7 +131,7 @@ def cleaning_page(df):
         if remove_rows_by_text != "<None>": prep = prep.delete_rows(remove_rows_by_text, target_text)
         st.session_state["df"] = prep.result()
         st.success("Cleaning applied.")
-    st.dataframe(st.session_state["df"].head(200), width='content')
+    st.dataframe(st.session_state["df"].head(200), width='stretch')
 
 
 def dashboard_page(df, mapping):
@@ -140,22 +141,17 @@ def dashboard_page(df, mapping):
     cols = st.columns(4)
     for i, (k, v) in enumerate(metrics.items()):
         cols[i % 4].metric(k.replace("_", " ").title(), "-" if v is None else f"{v:,.2f}" if isinstance(v, float) else str(v))
-    if "amount" in mapping:
-        st.plotly_chart(histogram(engine.prepared(), "_amount"), width='content')
-    if "transaction_date" in mapping and "amount" in mapping:
-        ts = engine.time_series(st.selectbox("Frequency", ["D", "W", "ME", "YE"]))
-        if not ts.empty:
-            st.plotly_chart(line_chart(ts, "_date", "sum", "Turnover over time"), width='content')
+
     df = st.session_state.get("df")
     if df is not None:
         st.subheader("Preview")
-        st.dataframe(df.head(100), width='content')
+        st.dataframe(df.head(100), width='stretch')
         c1, c2, c3 = st.columns(3)
         c1.metric("Rows", f"{len(df):,}")
         c2.metric("Columns", f"{df.shape[1]:,}")
         c3.metric("Memory", f"{memory_usage_mb(df):,.2f} MB")
         st.subheader("DataFrame information")
-        st.dataframe(dataframe_info(df), width='content')
+        st.dataframe(dataframe_info(df), width='stretch')
         st.subheader("Missing values")
         st.bar_chart(df.isna().sum())
 
@@ -164,17 +160,17 @@ def statistics_page(df, mapping):
     st.header("4. Statistical Analysis")
     engine = AnalyticsEngine(df, mapping)
     dfp = engine.prepared()
-    st.dataframe(engine.amount_statistics(), width='content')
+    st.dataframe(engine.amount_statistics(), width='stretch')
     if "_amount" in dfp:
         c1, c2 = st.columns(2)
-        c1.plotly_chart(histogram(dfp, "_amount"), width='content')
-        c2.plotly_chart(boxplot(dfp, "_amount"), width='content')
-    st.plotly_chart(heatmap_corr(dfp), width='content')
+        c1.plotly_chart(histogram(dfp, "_amount"), width='stretch')
+        c2.plotly_chart(boxplot(dfp, "_amount"), width='stretch')
+    st.plotly_chart(heatmap_corr(dfp), width='stretch')
     numeric_cols = list(dfp.select_dtypes("number").columns)
     if len(numeric_cols) >= 2:
         x = st.selectbox("Scatter X", numeric_cols)
         y = st.selectbox("Scatter Y", numeric_cols, index=1)
-        st.plotly_chart(px.scatter(dfp, x=x, y=y), width='content')
+        st.plotly_chart(px.scatter(dfp, x=x, y=y), width='stretch')
 
     st.subheader("Benford's Law Analysis")
 
@@ -183,8 +179,8 @@ def statistics_page(df, mapping):
     if benford_df.empty:
         st.info("Map and prepare the Amount column first to run Benford analysis.")
     else:
-        st.plotly_chart(benford_chart(benford_df), width='content')
-        st.dataframe(benford_df, width='content')
+        st.plotly_chart(benford_chart(benford_df), width='stretch')
+        st.dataframe(benford_df, width='stretch')
 
         mad = benford_df["absolute_difference"].mean()
         st.metric("Mean Absolute Deviation", f"{mad:.4f}")
@@ -206,7 +202,7 @@ def aml_page(df, mapping):
         st.warning("Map relevant fields such as amount, debit/credit accounts, customer, date and document number.")
         return
     selected = st.selectbox("AML analysis", list(results.keys()))
-    st.dataframe(results[selected], width='content')
+    st.dataframe(results[selected], width='stretch')
     if not results[selected].empty:
         download_dataframe(results[selected], selected.lower().replace(" ", "_"))
 
@@ -223,27 +219,26 @@ def risk_page(df, mapping):
             if rule.get("threshold") is not None:
                 rule["threshold"] = c3.number_input("Threshold", value=float(rule.get("threshold", 0)), key=f"rule_threshold_{name}")
     scored = RiskEngine(rules).score(df, mapping)
-    st.dataframe(scored.head(1000), width='content')
-    st.plotly_chart(px.histogram(scored, x="risk_score", color="risk_level", title="Risk score distribution"), width='content')
+    st.dataframe(scored.head(1000), width='stretch')
+    st.plotly_chart(px.histogram(scored, x="risk_score", color="risk_level", title="Risk score distribution"), width='stretch')
     download_dataframe(scored, "risk_scoring")
 
 
-def graph_page(df, mapping):
-    st.header("7. Graph Analysis")
-    source_key = st.selectbox("Source node", ["debit_account", "customer_id", "contract_customer", "document_number","debit_name"])
-    target_key = st.selectbox("Target node", ["credit_account", "customer_id", "contract_customer", "document_number","credit_name"])
-    directed = st.checkbox("Directed graph", True)
-    multigraph = st.checkbox("MultiGraph", False)
+def graph_page(df, mapping, lang="am"):
+    st.header("7. Գրաֆային Վերլուծություն (Graph Network)" if lang == "am" else "7. Graph Analysis")
+    c1, c2 = st.columns(2)
+    src_key = c1.selectbox("Աղբյուր (Source)", ["debit_account", "debit_name", "customer_id"], index=0)
+    dst_key = c2.selectbox("Նպատակ (Target)", ["credit_account", "credit_name", "customer_id"], index=0)
+
     try:
         analyzer = TransactionGraphAnalyzer(df, mapping)
-        g = analyzer.build_graph(source_key, target_key, directed=directed, multigraph=multigraph)
-        st.json(analyzer.metrics(g))
-        st.plotly_chart(network_figure(g), width='content')
-        tabs = st.tabs(["Centrality", "Cycles"])
-        tabs[0].dataframe(analyzer.centrality_table(g), width='content')
-        tabs[1].dataframe(analyzer.cycles_table(g), width='content')
+        G = analyzer.build_graph(src_key, dst_key, directed=True)
+        st.json(analyzer.metrics(G))
+        st.plotly_chart(network_figure(G), width='stretch')
+        st.header("Cycles")
+        st.dataframe(analyzer.cycles_table(G), width='stretch')
     except Exception as exc:
-        st.warning(str(exc))
+        st.error(f"Գրաֆի կառուցման սխալ: {exc}")
 
 
 def money_flow_page(df, mapping):
@@ -493,7 +488,7 @@ def money_flow_page(df, mapping):
 
         st.dataframe(
             display_df.head(500),
-            width='content',
+            width='stretch',
             height=500
         )
 
@@ -517,7 +512,7 @@ def money_flow_page(df, mapping):
 
         st.plotly_chart(
             fig,
-            width='content'
+            width='stretch'
         )
 
         st.subheader("AML Interpretation Hints")
@@ -550,8 +545,8 @@ def customer_account_page(df, mapping):
     tab1, tab2 = st.tabs(["Customers", "Accounts"])
     cust = engine.customer_analytics()
     acc = engine.account_analytics()
-    tab1.dataframe(cust, width='content')
-    tab2.dataframe(acc, width='content')
+    tab1.dataframe(cust, width='stretch')
+    tab2.dataframe(acc, width='stretch')
     if not cust.empty: download_dataframe(cust, "customer_analytics")
     if not acc.empty: download_dataframe(acc, "account_analytics")
 
@@ -573,12 +568,12 @@ def filters_pivot_page(df):
                 elif mode == "null": filtered = filtered[filtered[col].isna()]
                 elif mode == "not null": filtered = filtered[filtered[col].notna()]
                 elif mode == "doesn't contain" : filtered = filtered[~s.str.contains(val, case=False, na=False)]
-    st.dataframe(filtered.head(1000), width='content')
+    st.dataframe(filtered.head(1000), width='stretch')
     with st.expander("Duplicate detection"):
         dup_cols = st.multiselect("Duplicate columns", df.columns, key="dup_cols")
         if dup_cols:
             dups = df[df.duplicated(dup_cols, keep=False)].sort_values(dup_cols)
-            st.dataframe(dups, width='content')
+            st.dataframe(dups, width='stretch')
     with st.expander("Pivot builder"):
         rows = st.multiselect("Rows", df.columns, key="pivot_rows")
         cols = st.multiselect("Columns", df.columns, key="pivot_cols")
@@ -587,38 +582,10 @@ def filters_pivot_page(df):
         if rows and vals != "<None>":
             try:
                 pivot = pd.pivot_table(df, index=rows, columns=cols or None, values=vals, aggfunc=agg, fill_value=0)
-                st.dataframe(pivot, width='content')
+                st.dataframe(pivot, width='stretch')
             except Exception as exc:
                 st.error(exc)
 
-
-
-def ml_page(df):
-    st.header("10. Machine Learning")
-    numeric_cols = list(df.select_dtypes("number").columns)
-    if not numeric_cols:
-        st.warning("Convert/select numeric columns first.")
-        return
-    cols = st.multiselect("Numeric features", numeric_cols, default=numeric_cols[: min(5, len(numeric_cols))])
-    if not cols:
-        return
-    method = st.selectbox("Method", ["Isolation Forest", "KMeans", "DBSCAN", "PCA"])
-    analyzer = MLAnalyzer(df)
-    if method == "Isolation Forest":
-        contamination = st.slider("Contamination", 0.001, 0.20, 0.02)
-        result = analyzer.isolation_forest(cols, contamination)
-    elif method == "KMeans":
-        k = st.slider("Clusters", 2, 20, 5)
-        result = analyzer.kmeans(cols, k)
-    elif method == "DBSCAN":
-        eps = st.slider("EPS", 0.1, 5.0, 0.8)
-        min_samples = st.slider("Min samples", 2, 100, 10)
-        result = analyzer.dbscan(cols, eps, min_samples)
-    else:
-        result = analyzer.pca_projection(cols)
-        st.plotly_chart(px.scatter(result, x="PC1", y="PC2" if "PC2" in result else "PC1"), width='content')
-    st.dataframe(result.head(1000), width='content')
-    download_dataframe(result, "ml_results")
 
 
 def export_page(df):
@@ -639,7 +606,7 @@ def main():
     st.title(f"{APP_ICON} {APP_TITLE}")
     st.caption("Configurable AML, fraud detection, customer behavior, network analysis and risk scoring for banking transactions.")
     df = st.session_state.get("df")
-    page = st.sidebar.radio("Navigation", ["Load Data", "Cleaning", "Dashboard", "Statistics", "AML", "Risk Scoring", "Graph Analysis","Money Flow", "Customer/Account", "Filters/Pivot", "Machine Learning", "Export"])
+    page = st.sidebar.radio("Navigation", ["Load Data", "Cleaning", "Dashboard", "Statistics", "AML", "Risk Scoring", "Graph Analysis","Money Flow", "Customer/Account", "Filters/Pivot", "Export"])
     if page == "Load Data" or df is None:
         load_page()
         return
@@ -652,7 +619,6 @@ def main():
     elif page == "Graph Analysis": graph_page(df, mapping)
     elif page == "Customer/Account": customer_account_page(df, mapping)
     elif page == "Filters/Pivot": filters_pivot_page(df)
-    elif page == "Machine Learning": ml_page(df)
     elif page == "Export": export_page(df)
     elif page == "Money Flow": money_flow_page(df, mapping)
 

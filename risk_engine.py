@@ -61,8 +61,6 @@ class RiskEngine:
         if date_col:
             apply_rule("night_activity", dates.dt.hour.between(0, 5))
             apply_rule("weekend_activity", dates.dt.weekday >= 5)
-        if doc:
-            apply_rule("duplicate_document", out[doc].notna() & out.duplicated(doc, keep=False))
         if debit:
             cnt = out.groupby(debit)[debit].transform("count")
             apply_rule("high_frequency_sender", cnt >= float(self.rules["high_frequency_sender"].get("threshold", 20)))
@@ -77,4 +75,7 @@ class RiskEngine:
         out["risk_score"] = score.clip(0, 100).round(2)
         out["risk_level"] = out["risk_score"].apply(self._level)
         out["risk_reasons"] = ["; ".join(r) if r else "No enabled rule triggered" for r in reasons]
-        return out.sort_values("risk_score", ascending=False)
+        out.sort_values("risk_score", ascending=False, inplace=True)
+        if doc:
+            out.drop_duplicates(subset=[doc], inplace=True)
+        return out

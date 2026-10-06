@@ -234,25 +234,61 @@ def sankey_from_edges(
 
 
 
-def network_figure(G, max_nodes: int = 300):
+def network_figure(G, max_nodes: int = 250):
     H = G.copy()
     if H.number_of_nodes() > max_nodes:
         top_nodes = sorted(dict(H.degree()).items(), key=lambda x: x[1], reverse=True)[:max_nodes]
         H = H.subgraph([n for n, _ in top_nodes]).copy()
-    pos = nx.spring_layout(H, seed=42, k=0.35)
+
+    pos = nx.spring_layout(H, seed=42, k=0.4)
     edge_x, edge_y = [], []
     for e in H.edges():
-        x0, y0 = pos[e[0]]; x1, y1 = pos[e[1]]
-        edge_x += [x0, x1, None]; edge_y += [y0, y1, None]
-    edge_trace = go.Scatter(x=edge_x, y=edge_y, line=dict(width=0.5), hoverinfo="none", mode="lines")
+        if e[0] in pos and e[1] in pos:
+            x0, y0 = pos[e[0]]
+            x1, y1 = pos[e[1]]
+            edge_x += [x0, x1, None]
+            edge_y += [y0, y1, None]
+
+    edge_trace = go.Scatter(
+        x=edge_x, y=edge_y,
+        line=dict(width=0.7, color="#94a3b8"),
+        hoverinfo="none",
+        mode="lines"
+    )
+
     node_x, node_y, text, size = [], [], [], []
     deg = dict(H.degree())
     for n in H.nodes():
-        x, y = pos[n]
-        node_x.append(x); node_y.append(y); text.append(str(n)); size.append(8 + deg.get(n, 1) * 1.5)
-    node_trace = go.Scatter(x=node_x, y=node_y, mode="markers+text", text=text, textposition="top center", hoverinfo="text", marker=dict(size=size, color=size, showscale=True))
+        if n in pos:
+            x, y = pos[n]
+            node_x.append(x)
+            node_y.append(y)
+            d = deg.get(n, 1)
+            text.append(f"Node: {n}<br>Connections: {d}")
+            size.append(min(32, 10 + d * 2))
+
+    node_trace = go.Scatter(
+        x=node_x, y=node_y,
+        mode="markers",
+        text=text,
+        hoverinfo="text",
+        marker=dict(
+            size=size,
+            color=size,
+            colorscale="Viridis",
+            showscale=True,
+            colorbar=dict(title="Degree")
+        )
+    )
+
     fig = go.Figure(data=[edge_trace, node_trace])
-    fig.update_layout(title="Transaction Network", showlegend=False, margin=dict(l=10, r=10, t=40, b=10))
+    fig.update_layout(
+        title="Transaction Network Graph (Գործարքների ցանցային գրաֆ)",
+        showlegend=False,
+        template="plotly_white",
+        margin=dict(l=10, r=10, t=40, b=10),
+        height=650
+    )
     return fig
 
 def benford_chart(benford_df: pd.DataFrame):
