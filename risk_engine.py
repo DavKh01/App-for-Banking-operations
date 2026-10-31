@@ -14,7 +14,7 @@ class RiskEngine:
     """Assign AML risk scores from configurable rules."""
 
     def __init__(self, rules: Dict[str, Dict[str, Any]] | None = None, levels: Dict[str, tuple] | None = None):
-        self.rules = rules or DEFAULT_RULES.copy()
+        self.rules = rules
         self.levels = levels or DEFAULT_RISK_LEVELS
 
     def _level(self, score: float) -> str:

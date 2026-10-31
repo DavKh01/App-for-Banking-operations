@@ -32,7 +32,7 @@ def safe_numeric(series: pd.Series) -> pd.Series:
 
 def safe_datetime(series: pd.Series) -> pd.Series:
     """Convert a series to datetime safely."""
-    return pd.to_datetime(series,dayfirst=True, errors="coerce")
+    return pd.to_datetime(series, dayfirst=True, errors="coerce", format="mixed")
 
 
 

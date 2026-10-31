@@ -45,7 +45,7 @@ class DataLoader:
         if lower.endswith((".xlsx", ".xls")):
             return pd.read_excel(
                 buffer, sheet_name=options.sheet_name, header=header, skiprows=options.skiprows,
-                nrows=nrows, dtype=dtype, parse_dates=parse_dates, engine="openpyxl" if lower.endswith(".xlsx") else None,
+                nrows=nrows, dtype=dtype, parse_dates=parse_dates, engine="calamine" if lower.endswith(".xlsx") else None,
             )
         sep = "\t" if lower.endswith(".tsv") else options.delimiter
         return pd.read_csv(

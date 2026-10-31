@@ -11,15 +11,17 @@ import streamlit as st
 import plotly.express as px
 from streamlit import title
 
-from config import APP_TITLE, APP_ICON, CANONICAL_FIELDS, DEFAULT_RULES, CANONICAL_FIELDS_2
+from config import APP_TITLE, APP_ICON, CANONICAL_FIELDS, DEFAULT_RULES, CANONICAL_FIELDS_2, CANONICAL_FIELDS_3, \
+    LEGAL_ENTITY_PREFIXES, DEFAULT_RULES_LEGAL
 from data_loader import DataLoader, LoadOptions
 from preprocessing import DataPreprocessor
 from analysis import AnalyticsEngine
 from risk_engine import RiskEngine
 from graph_analysis import TransactionGraphAnalyzer
 from visualization import histogram, boxplot, line_chart, heatmap_corr, network_figure, sankey_from_edges,benford_chart
-from utils import dataframe_info, memory_usage_mb, normalize_mapping, download_dataframe,\
-    dataframe_pdf_bytes, dataframe_pptx_bytes
+
+from utils import dataframe_info, memory_usage_mb, normalize_mapping, download_dataframe, \
+    dataframe_pdf_bytes, dataframe_pptx_bytes, get_col, safe_numeric, safe_datetime
 
 st.set_page_config(page_title=APP_TITLE, page_icon=APP_ICON, layout="wide")
 
@@ -27,14 +29,21 @@ st.set_page_config(page_title=APP_TITLE, page_icon=APP_ICON, layout="wide")
 def init_state():
     st.session_state.setdefault("df", None)
     st.session_state.setdefault("mapping", {})
-    st.session_state.setdefault("rules", json.loads(json.dumps(DEFAULT_RULES)))
+    st.session_state.setdefault("rules_physical", json.loads(json.dumps(DEFAULT_RULES)))
+    st.session_state.setdefault("rules_legal", json.loads(json.dumps(DEFAULT_RULES_LEGAL)))
 
 
 def sidebar_mapping(df: pd.DataFrame) -> Dict[str, str]:
     st.sidebar.subheader("Column Mapping")
     options = ["<Not available>"] + list(df.columns)
     mapping = {}
-    canon = CANONICAL_FIELDS if df.columns[0] == "Doc Type" else CANONICAL_FIELDS_2
+    if(df.columns[0] == "Doc Type"):
+        canon = CANONICAL_FIELDS
+    elif(df.columns[0] == "DocType"):
+        canon = CANONICAL_FIELDS_3
+    else:
+        canon = CANONICAL_FIELDS_2
+
     column_map = {c.strip().lower(): c for c in df.columns}
 
     for key, label in canon.items():
@@ -93,8 +102,19 @@ def load_page():
             st.success("Dataset loaded successfully.")
         except Exception as exc:
             st.error(f"Loading failed: {exc}")
-    df = pd.read_excel(uploaded,skiprows=skiprows, nrows=100 if nrows == 0 else nrows)
-    #mv = sidebar_mapping(df)
+    lower = uploaded.name.lower()
+    limit_rows = 100 if nrows == 0 else nrows
+    df = pd.DataFrame()
+    if lower.endswith((".xlsx", ".xls")):
+        df = pd.read_excel(uploaded, skiprows=skiprows, engine="calamine", nrows=limit_rows)
+
+    elif lower.endswith((".csv", ".tsv")):
+        sep = "\t" if lower.endswith(".tsv") else ","
+        try:
+            df = pd.read_csv(uploaded, skiprows=skiprows, sep=sep, nrows=limit_rows)
+        except pd.errors.ParserError:
+            uploaded.seek(0)
+            df = pd.read_csv(uploaded, skiprows=skiprows, sep=None, engine='python', nrows=limit_rows)
     if df is not None:
         st.subheader("Preview")
         st.dataframe(df.head(100).astype(str), width='stretch')
@@ -206,21 +226,48 @@ def aml_page(df, mapping):
         download_dataframe(results[selected], selected.lower().replace(" ", "_"))
 
 
-def risk_page(df, mapping):
+def risk_page(df, mapping, entity_type: str = "all"):
     st.header("6. Risk Scoring Engine")
-    st.write("Enable/disable rules and tune thresholds/weights. Scores are capped at 100 and include explanations.")
-    rules = st.session_state["rules"]
+
+    # 1. Ընտրում ենք կանոնների փաթեթը ըստ հաճախորդի տիպի
+    is_legal = (entity_type == "legal")
+    state_key = "rules_legal" if is_legal else "rules_physical"
+
+    if state_key not in st.session_state:
+        default_rules = DEFAULT_RULES_LEGAL if is_legal else DEFAULT_RULES
+        st.session_state[state_key] = json.loads(json.dumps(default_rules))
+
+    rules = st.session_state[state_key]
+
+
     with st.expander("Rule configuration", expanded=True):
+        col_res, _ = st.columns([1, 3])
+
         for name, rule in rules.items():
             c1, c2, c3 = st.columns([2, 1, 1])
-            rule["enabled"] = c1.checkbox(name, value=rule.get("enabled", True), key=f"rule_enabled_{name}")
-            rule["weight"] = c2.number_input("Weight", value=float(rule.get("weight", 0)), key=f"rule_weight_{name}")
+            rule["enabled"] = c1.checkbox(
+                name,
+                value=rule.get("enabled", True),
+                key=f"rule_{state_key}_enabled_{name}"
+            )
+            rule["weight"] = c2.number_input(
+                "Weight",
+                value=float(rule.get("weight", 0)),
+                key=f"rule_{state_key}_weight_{name}"
+            )
             if rule.get("threshold") is not None:
-                rule["threshold"] = c3.number_input("Threshold", value=float(rule.get("threshold", 0)), key=f"rule_threshold_{name}")
+                rule["threshold"] = c3.number_input(
+                    "Threshold",
+                    value=float(rule.get("threshold", 0)),
+                    key=f"rule_{state_key}_threshold_{name}"
+                )
+
     scored = RiskEngine(rules).score(df, mapping)
     st.dataframe(scored.head(1000), width='stretch')
-    st.plotly_chart(px.histogram(scored, x="risk_score", color="risk_level", title="Risk score distribution"), width='stretch')
-    download_dataframe(scored, "risk_scoring")
+    st.plotly_chart(
+        px.histogram(scored, x="risk_score", color="risk_level", title=f"Risk score distribution"),
+        width='stretch')
+    download_dataframe(scored, f"risk_scoring_{state_key}")
 
 
 def graph_page(df, mapping, lang="am"):
@@ -600,26 +647,86 @@ def export_page(df):
     st.download_button("Download PowerPoint report", dataframe_pptx_bytes(df), "aml_report.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation")
 
 
+def split_by_entity_type(df: pd.DataFrame, mapping: Dict[str, str]):
+    type_col = mapping.get("doc_type")
+    debit_col = mapping.get("debit_account")
+    credit_col = mapping.get("credit_account")
+
+    if (
+        not type_col or type_col not in df.columns
+        or not debit_col or debit_col not in df.columns
+        or not credit_col or credit_col not in df.columns
+    ):
+        return df, df, df
+
+    doc_type = df[type_col].astype(str).str.strip()
+    debit_str = df[debit_col].astype(str).str.strip()
+    credit_str = df[credit_col].astype(str).str.strip()
+
+    is_outgoing = doc_type.eq("Բանկային հաշվից ելք")
+    is_replenishment = doc_type.eq("Բանկային հաշվի համալրում")
+
+    is_legal = (
+        (is_outgoing & debit_str.str.startswith(LEGAL_ENTITY_PREFIXES))
+        | (is_replenishment & credit_str.str.startswith(LEGAL_ENTITY_PREFIXES))
+    )
+
+    df_legal = df[is_legal].copy()
+    df_phys = df[~is_legal].copy()
+
+    return df, df_phys, df_legal
+
+def show_choice(df_all, df_phys, df_legal):
+    entity_choice = st.radio(
+        "Active Dataset for Analysis:",
+        [
+            f"👤 Ֆիզիկական անձինք ({len(df_phys):,} գործարք)",
+            f"🏢 Իրավաբանական անձինք ({len(df_legal):,} գործարք)",
+            f"🌐 Բոլոր գործարքները ({len(df_all):,} գործարք)",
+        ],
+        index=0,
+        horizontal=True,
+    )
+
+    if "Ֆիզիկական" in entity_choice:
+        active_df = df_phys
+        entity_type = "phys"
+        st.info(f"Ցուցադրվում են **ֆիզիկական անձանց** գործարքները ({len(df_phys):,} գործարք):")
+    elif "Իրավաբանական" in entity_choice:
+        active_df = df_legal
+        entity_type = "legal"
+        st.info(f"Ցուցադրվում են **իրավաբանական անձանց** գործարքները ({len(df_legal):,} գործարք):")
+    else:
+        active_df = df_all
+        entity_type = "all"
+        st.info(f"Ցուցադրվում են **բոլոր** գործարքները ({len(df_all):,} գործարք):")
+    return active_df, entity_type
+
 def main():
     init_state()
     st.title(f"{APP_ICON} {APP_TITLE}")
     st.caption("Configurable AML, fraud detection, customer behavior, network analysis and risk scoring for banking transactions.")
-    df = st.session_state.get("df")
+    active_df = st.session_state.get("df")
     page = st.sidebar.radio("Navigation", ["Load Data", "Cleaning", "Dashboard", "Statistics", "AML", "Risk Scoring", "Graph Analysis","Money Flow", "Customer/Account", "Filters/Pivot", "Export"])
-    if page == "Load Data" or df is None:
+    if page == "Load Data" or active_df is None:
         load_page()
         return
-    mapping = sidebar_mapping(df)
-    if page == "Cleaning": cleaning_page(df)
-    elif page == "Dashboard": dashboard_page(df, mapping)
-    elif page == "Statistics": statistics_page(df, mapping)
-    elif page == "AML": aml_page(df, mapping)
-    elif page == "Risk Scoring": risk_page(df, mapping)
-    elif page == "Graph Analysis": graph_page(df, mapping)
-    elif page == "Customer/Account": customer_account_page(df, mapping)
-    elif page == "Filters/Pivot": filters_pivot_page(df)
-    elif page == "Export": export_page(df)
-    elif page == "Money Flow": money_flow_page(df, mapping)
+    mapping = sidebar_mapping(active_df)
+
+    df_all, df_phys, df_legal = split_by_entity_type(active_df, mapping)
+
+    st.markdown("---")
+
+    if page == "Cleaning": cleaning_page(active_df)
+    elif page == "Dashboard": dashboard_page(active_df, mapping)
+    elif page == "Statistics": active_df,entity_type = show_choice(df_all, df_phys, df_legal); statistics_page(active_df, mapping)
+    elif page == "AML": active_df,entity_type = show_choice(df_all, df_phys, df_legal); aml_page(active_df, mapping)
+    elif page == "Risk Scoring": active_df,entity_type = show_choice(df_all, df_phys, df_legal); risk_page(active_df, mapping,entity_type)
+    elif page == "Graph Analysis": active_df,entity_type = show_choice(df_all, df_phys, df_legal); graph_page(active_df, mapping)
+    elif page == "Customer/Account": active_df,entity_type = show_choice(df_all, df_phys, df_legal); customer_account_page(active_df, mapping)
+    elif page == "Filters/Pivot": active_df,entity_type= show_choice(df_all, df_phys, df_legal); filters_pivot_page(active_df)
+    elif page == "Export": export_page(active_df)
+    elif page == "Money Flow": active_df,entity_type = show_choice(df_all, df_phys, df_legal); money_flow_page(active_df, mapping)
 
 
 if __name__ == "__main__":

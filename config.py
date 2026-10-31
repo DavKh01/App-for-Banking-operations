@@ -48,11 +48,55 @@ CANONICAL_FIELDS_2 = {
     "cash_flag": "Փաստ. համար",
     "user": "Օգտագործող",
 }
+CANONICAL_FIELDS_3 = {
+    "bank_account": "BankAccount",
+    "transaction_date": "EntryDate",
+    "amount": "DefAmount",
+    "debit_account": "DebitId",
+    "credit_account": "CreditId",
+    "customer_id": "DocCustomer",
+    "contract_customer": "ContractCustomer",
+    "document_number": "DocumentNum",
+    "currency": "CurrencyId",
+    "branch": "Branch",
+    "note": "Note",
+    "doc_type": "DocType",
+    "doc_state": "DocState",
+    "cash_flag": "DocCash",
+    "user": "User",
+    "debit_name": "DebitAccName",
+    "credit_name": "CreditAccName",
+}
+
+LEGAL_ENTITY_PREFIXES = (
+    "3020200",
+    "3001",
+    "3000200",
+    "3001400",
+    "3021",
+    "3030",
+    "3011",
+    "324",
+    "39",
+    "3030",
+    "3020"
+)
 
 DEFAULT_RULES: Dict[str, Dict[str, Any]] = {
     "large_amount": {"enabled": True, "weight": 20, "threshold": 25000000, "description": "Transaction amount exceeds threshold."},
     "round_amount": {"enabled": True, "weight": 10, "threshold": 100000, "description": "Amount is a large round number."},
     "cash_transaction": {"enabled": True, "weight": 14, "threshold": None, "description": "Cash-related transaction."},
+    "night_activity": {"enabled": True, "weight": 10, "threshold": None, "description": "Transaction occurred at night."},
+    "weekend_activity": {"enabled": True, "weight": 5, "threshold": None, "description": "Transaction occurred on weekend."},
+    "high_frequency_sender": {"enabled": True, "weight": 14, "threshold": 20, "description": "Sender has unusually high transaction count."},
+    "many_counterparties": {"enabled": True, "weight": 15, "threshold": 15, "description": "Sender interacts with many counterparties."},
+    "multiple_currencies": {"enabled": True, "weight": 12, "threshold": 2, "description": "Customer/account uses multiple currencies."},
+}
+
+DEFAULT_RULES_LEGAL: Dict[str, Dict[str, Any]] = {
+    "large_amount": {"enabled": True, "weight": 20, "threshold": 100000000, "description": "Transaction amount exceeds threshold."},
+    "round_amount": {"enabled": True, "weight": 4, "threshold": 1000000, "description": "Amount is a large round number."},
+    "cash_transaction": {"enabled": True, "weight": 20, "threshold": None, "description": "Cash-related transaction."},
     "night_activity": {"enabled": True, "weight": 10, "threshold": None, "description": "Transaction occurred at night."},
     "weekend_activity": {"enabled": True, "weight": 5, "threshold": None, "description": "Transaction occurred on weekend."},
     "high_frequency_sender": {"enabled": True, "weight": 14, "threshold": 20, "description": "Sender has unusually high transaction count."},
