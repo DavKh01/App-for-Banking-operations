@@ -99,6 +99,7 @@ def load_page():
     if st.button("Load dataset", type="primary"):
         try:
             st.session_state["df"] = DataLoader.load(uploaded.getvalue(), uploaded.name, opts)
+            st.session_state["df"] = st.session_state["df"].replace('եվ', 'և', regex=True)
             st.success("Dataset loaded successfully.")
         except Exception as exc:
             st.error(f"Loading failed: {exc}")
@@ -107,7 +108,6 @@ def load_page():
     df = pd.DataFrame()
     if lower.endswith((".xlsx", ".xls")):
         df = pd.read_excel(uploaded, skiprows=skiprows, engine="calamine", nrows=limit_rows)
-
     elif lower.endswith((".csv", ".tsv")):
         sep = "\t" if lower.endswith(".tsv") else ","
         try:
@@ -230,8 +230,6 @@ def aml_page(df, mapping):
 
 def risk_page(df, mapping, entity_type: str = "all"):
     st.header("6. Risk Scoring Engine")
-
-    # 1. Ընտրում ենք կանոնների փաթեթը ըստ հաճախորդի տիպի
     is_legal = (entity_type == "legal")
     state_key = "rules_legal" if is_legal else "rules_physical"
 

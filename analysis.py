@@ -152,15 +152,15 @@ class AnalyticsEngine:
                 .sort_values("transaction_count", ascending=False)
             )
             results["Repeated same amount (same day)"] = same_amount_day.head(1000)
-        if debit and credit:
-            results["Top senders"] = df.groupby(debit_name).size().sort_values(ascending=False).head(50).reset_index(name="transaction_count")
-            results["Top receivers"] = df.groupby(credit_name).size().sort_values(ascending=False).head(50).reset_index(name="transaction_count")
-            cpty = df.groupby(debit)[credit].nunique().sort_values(ascending=False).head(50).reset_index(name="unique_counterparties")
-            results["Frequent counterparty changes"] = cpty
-            many_to_one = df.groupby(credit)[debit].nunique().sort_values(ascending=False).head(50).reset_index(name="unique_senders")
-            results["Many-to-one transfers"] = many_to_one
-            one_to_many = df.groupby(debit)[credit].nunique().sort_values(ascending=False).head(50).reset_index(name="unique_receivers")
-            results["One-to-many transfers"] = one_to_many
+        # if debit and credit:
+        #     results["Top senders"] = df.groupby(debit_name).size().sort_values(ascending=False).head(50).reset_index(name="transaction_count")
+        #     results["Top receivers"] = df.groupby(credit_name).size().sort_values(ascending=False).head(50).reset_index(name="transaction_count")
+        #     cpty = df.groupby(debit)[credit].nunique().sort_values(ascending=False).head(50).reset_index(name="unique_counterparties")
+        #     results["Frequent counterparty changes"] = cpty
+        #     many_to_one = df.groupby(credit)[debit].nunique().sort_values(ascending=False).head(50).reset_index(name="unique_senders")
+        #     results["Many-to-one transfers"] = many_to_one
+        #     one_to_many = df.groupby(debit)[credit].nunique().sort_values(ascending=False).head(50).reset_index(name="unique_receivers")
+        #     results["One-to-many transfers"] = one_to_many
         if customer and amount:
             group_cols = [
                 customer,

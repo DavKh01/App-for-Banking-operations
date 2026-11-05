@@ -54,13 +54,16 @@ def dataframe_info(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def download_dataframe(df: pd.DataFrame, filename_stem: str = "export") -> None:
-    """Render common dataframe download buttons."""
-    st.download_button("Download CSV", df.to_csv(index=False).encode("utf-8"), f"{filename_stem}.csv", "text/csv")
     excel_buffer = io.BytesIO()
     with pd.ExcelWriter(excel_buffer, engine="openpyxl") as writer:
-        df.to_excel(writer, index=False, sheet_name="Data")
-    st.download_button("Download Excel", excel_buffer.getvalue(), f"{filename_stem}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-    st.download_button("Download JSON", df.to_json(orient="records", date_format="iso").encode("utf-8"), f"{filename_stem}.json", "application/json")
+        df.astype(str).to_excel(writer, index=False, sheet_name="Data")
+
+    st.download_button(
+        "Download Excel",
+        excel_buffer.getvalue(),
+        f"{filename_stem}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
 
 
 def require_columns(mapping: Dict[str, str], keys: Iterable[str]) -> bool:
