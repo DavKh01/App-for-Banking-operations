@@ -2,3 +2,4 @@ python-calamine
 streamlit
 pandas
 plotly
+networkx
