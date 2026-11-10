@@ -21,7 +21,7 @@ CANONICAL_FIELDS = {
     "debit_account": "Debit Id",
     "credit_account": "Credit Id",
     "customer_id": "Doc Customer",
-    "contract_customer": "Contract Customer",
+    #"contract_customer": "Contract Customer",
     "document_number": "Document Num",
     "currency": "Currency Id",
     "branch": "Branch",
@@ -79,7 +79,8 @@ LEGAL_ENTITY_PREFIXES = (
     "324",
     "39",
     "3030",
-    "3020"
+    "3020",
+    "4310"
 )
 
 DEFAULT_RULES: Dict[str, Dict[str, Any]] = {

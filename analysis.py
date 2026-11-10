@@ -5,9 +5,26 @@ from __future__ import annotations
 from typing import Dict
 import numpy as np
 import pandas as pd
-
 from utils import safe_numeric, safe_datetime, get_col
 
+LEGAL_ENTITY_PREFIXES = (
+    "3020200",
+    "3001",
+    "3000200",
+    "3001400",
+    "3021",
+    "3030",
+    "3011",
+    "324",
+    "3030",
+    "3020",
+    "4310",
+    "43123",
+    "43124",
+    "43125"
+    "4313",
+    "432",
+)
 
 class AnalyticsEngine:
     """Reusable banking analytics calculations."""
@@ -120,7 +137,6 @@ class AnalyticsEngine:
         doc = get_col(self.mapping, "document_number")
         branch = get_col(self.mapping, "branch")
         currency = get_col(self.mapping, "currency")
-        note = get_col(self.mapping, "note")
         cash = get_col(self.mapping, "cash_flag")
         if amount:
             q99 = df[amount].quantile(.99)
@@ -178,14 +194,22 @@ class AnalyticsEngine:
         if "_date" in df:
             results["Weekend transactions"] = df[df["_date"].dt.weekday >= 5].head(1000)
             results["Night transactions"] = df[df["_date"].dt.hour.between(0, 5)].head(10000)
-        if note:
-            results["Repeated notes"] = df[df[note].notna() & df.duplicated(note, keep=False)].head(1000)
         if cash and amount:
             cash_large = df[
                 (df[cash].notna()) &
                 (df[amount] >= df[amount].quantile(.99))
                 ]
             results["Large cash transactions"] = cash_large.head(1000)
+        if debit and credit:
+            legal_to_individual = df[
+                df[debit].astype("string").str.startswith(
+                    tuple(LEGAL_ENTITY_PREFIXES), na=False
+                )
+                &
+                df[credit].astype("string").str.startswith("3022")
+                ]
+
+            results["Legal Entity → Individual Transfers"] = legal_to_individual.head(10000)
         if customer and branch:
             group_cols = [
                 customer,

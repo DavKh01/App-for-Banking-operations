@@ -123,11 +123,11 @@ def cleaning_page(df):
     st.header("2. Data Cleaning")
     prep = DataPreprocessor(df)
     with st.form("clean_form"):
-        remove_dups = st.checkbox("Remove duplicates")
+        #remove_dups = st.checkbox("Remove duplicates")
         remove_fees = st.checkbox("Remove fees")
         remove_loans = st.checkbox("Remove loans")
         remove_deposits = st.checkbox("Remove deposits")
-        dup_subset = st.multiselect("Duplicate subset columns", df.columns)
+        #dup_subset = st.multiselect("Duplicate subset columns", df.columns)
         trim_cols = st.multiselect("Trim spaces in columns", df.columns)
         case_cols = st.multiselect("Case conversion columns", df.columns)
         case_mode = st.radio("Case mode", ["upper", "lower"], horizontal=True)
@@ -140,7 +140,7 @@ def cleaning_page(df):
         target_text = st.text_input("Target text", "").lower()
         submitted = st.form_submit_button("Apply cleaning")
     if submitted:
-        if remove_dups: prep.remove_duplicates(dup_subset or None)
+        #if remove_dups: prep.remove_duplicates(dup_subset or None)
         if remove_fees: prep.remove_rows("միջնորդավճար")
         if remove_loans: prep.remove_rows("վարկ")
         if remove_deposits: prep.remove_rows("ավանդ")
