@@ -387,7 +387,7 @@ def main():
     if active_df is not None and not isinstance(active_df, Dataset):
         st.session_state["df"] = None
         active_df = None
-    page = st.sidebar.radio("Navigation", ["Load Data", "Cleaning", "Dashboard", "Statistics", "AML", "Risk Scoring", "Graph Analysis","Money Flow", "Customer/Account", "Filters/Pivot", "Export"])
+    page = st.sidebar.radio("Navigation", ["Load Data", "Cleaning", "Dashboard", "AML", "Risk Scoring", "Graph Analysis", "Filters/Pivot", "Export"])
     if page == "Load Data" or active_df is None:
         load_page()
         return
