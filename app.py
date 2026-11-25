@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 import json
-
 from typing import Dict
 
 import pandas as pd
-import streamlit as st
+import polars as pl
 import plotly.express as px
-from streamlit import title
+import streamlit as st
 
 from config import APP_TITLE, APP_ICON, CANONICAL_FIELDS, DEFAULT_RULES, CANONICAL_FIELDS_2, CANONICAL_FIELDS_3, \
     LEGAL_ENTITY_PREFIXES, DEFAULT_RULES_LEGAL
@@ -18,10 +17,10 @@ from preprocessing import DataPreprocessor
 from analysis import AnalyticsEngine
 from risk_engine import RiskEngine
 from graph_analysis import TransactionGraphAnalyzer
-from visualization import histogram, boxplot, line_chart, heatmap_corr, network_figure, sankey_from_edges,benford_chart
+from visualization import histogram, boxplot, line_chart, heatmap_corr, network_figure, sankey_from_edges, benford_chart
 
-from utils import dataframe_info, memory_usage_mb, normalize_mapping, download_dataframe, \
-    dataframe_pdf_bytes, dataframe_pptx_bytes, get_col, safe_numeric, safe_datetime
+from storage import Dataset, digest, make_dataset
+from utils import dataframe_info, memory_usage_mb, normalize_mapping, download_dataframe, download_csv
 
 st.set_page_config(page_title=APP_TITLE, page_icon=APP_ICON, layout="wide")
 
@@ -33,13 +32,33 @@ def init_state():
     st.session_state.setdefault("rules_legal", json.loads(json.dumps(DEFAULT_RULES_LEGAL)))
 
 
-def sidebar_mapping(df: pd.DataFrame) -> Dict[str, str]:
+def show_table(data, *, height=None):
+    """Render a table with readable widths and left-to-right scrolling.
+
+    Keeping every column at a fixed minimum width makes wide datasets wider
+    than the page, so Streamlit shows a horizontal scrollbar instead of
+    squeezing (and truncating) the values.  No column is pinned.
+    """
+    columns = list(getattr(data, "columns", []))
+    config = {
+        str(col): st.column_config.Column(width=180)
+        for col in columns
+    }
+    kwargs = {"width": "stretch"}
+    if height is not None:
+        kwargs["height"] = height
+    if config:
+        kwargs["column_config"] = config
+    st.dataframe(data, **kwargs)
+
+
+def sidebar_mapping(df: Dataset) -> Dict[str, str]:
     st.sidebar.subheader("Column Mapping")
     options = ["<Not available>"] + list(df.columns)
     mapping = {}
-    if(df.columns[0] == "Doc Type"):
+    if df.columns[0] == "Doc Type":
         canon = CANONICAL_FIELDS
-    elif(df.columns[0] == "DocType"):
+    elif df.columns[0] == "DocType":
         canon = CANONICAL_FIELDS_3
     else:
         canon = CANONICAL_FIELDS_2
@@ -62,7 +81,6 @@ def sidebar_mapping(df: pd.DataFrame) -> Dict[str, str]:
 
     if "debit_name" not in mapping and "debit_account" in mapping:
         mapping["debit_name"] = mapping["debit_account"]
-
 
     if "credit_name" not in mapping and "credit_account" in mapping:
         mapping["credit_name"] = mapping["credit_account"]
@@ -99,27 +117,23 @@ def load_page():
     if st.button("Load dataset", type="primary"):
         try:
             st.session_state["df"] = DataLoader.load(uploaded.getvalue(), uploaded.name, opts)
-            st.session_state["df"] = st.session_state["df"].replace('եվ', 'և', regex=True)
             st.success("Dataset loaded successfully.")
         except Exception as exc:
             st.error(f"Loading failed: {exc}")
-    lower = uploaded.name.lower()
     limit_rows = 100 if nrows == 0 else nrows
-    df = pd.DataFrame()
-    if lower.endswith((".xlsx", ".xls")):
-        df = pd.read_excel(uploaded, skiprows=skiprows, engine="calamine", nrows=limit_rows)
-    elif lower.endswith((".csv", ".tsv")):
-        sep = "\t" if lower.endswith(".tsv") else ","
-        try:
-            df = pd.read_csv(uploaded, skiprows=skiprows, sep=sep, nrows=limit_rows)
-        except pd.errors.ParserError:
-            uploaded.seek(0)
-            df = pd.read_csv(uploaded, skiprows=skiprows, sep=None, engine='python', nrows=limit_rows)
-    if df is not None:
+    preview_opts = LoadOptions(delimiter=delimiter, encoding=encoding, decimal=decimal,
+                               thousands=thousands or None, sheet_name=sheet_name,
+                               header=None if header < 0 else header, skiprows=skiprows,
+                               nrows=limit_rows, load_as_text=load_as_text)
+    try:
+        preview_ds = DataLoader.load(uploaded.getvalue(), uploaded.name, preview_opts)
         st.subheader("Preview")
-        st.dataframe(df.head(100).astype(str), width='stretch')
+        show_table(preview_ds.pandas_head(100).astype(str))
+    except Exception as exc:
+        st.info(f"Preview unavailable: {exc}")
 
-def cleaning_page(df):
+
+def cleaning_page(df: Dataset):
     st.header("2. Data Cleaning")
     prep = DataPreprocessor(df)
     with st.form("clean_form"):
@@ -152,10 +166,10 @@ def cleaning_page(df):
         if remove_rows_by_text != "<None>": prep = prep.delete_rows(remove_rows_by_text, target_text)
         st.session_state["df"] = prep.result()
         st.success("Cleaning applied.")
-    st.dataframe(st.session_state["df"].head(200), width='stretch')
+    show_table(st.session_state["df"].pandas_head(200))
 
 
-def dashboard_page(df, mapping):
+def dashboard_page(df: Dataset, mapping):
     st.header("3. Dashboard")
     engine = AnalyticsEngine(df, mapping)
     metrics = engine.dashboard_metrics()
@@ -166,28 +180,29 @@ def dashboard_page(df, mapping):
     df = st.session_state.get("df")
     if df is not None:
         st.subheader("Preview")
-        st.dataframe(df.head(100), width='stretch')
+        show_table(df.pandas_head(100))
         c1, c2, c3 = st.columns(3)
         c1.metric("Rows", f"{len(df):,}")
         c2.metric("Columns", f"{df.shape[1]:,}")
         c3.metric("Memory", f"{memory_usage_mb(df):,.2f} MB")
         st.subheader("DataFrame information")
-        st.dataframe(dataframe_info(df), width='stretch')
+        show_table(dataframe_info(df))
         st.subheader("Missing values")
-        st.bar_chart(df.isna().sum())
+        info = dataframe_info(df).to_pandas().set_index("column")["nulls"]
+        st.bar_chart(info)
 
 
-def statistics_page(df, mapping):
+def statistics_page(df: Dataset, mapping):
     st.header("4. Statistical Analysis")
     engine = AnalyticsEngine(df, mapping)
     dfp = engine.prepared()
-    st.dataframe(engine.amount_statistics(), width='stretch')
-    if "_amount" in dfp:
+    show_table(engine.amount_statistics())
+    if "_amount" in dfp.columns:
         c1, c2 = st.columns(2)
         c1.plotly_chart(histogram(dfp, "_amount"), width='stretch')
         c2.plotly_chart(boxplot(dfp, "_amount"), width='stretch')
     st.plotly_chart(heatmap_corr(dfp), width='stretch')
-    numeric_cols = list(dfp.select_dtypes("number").columns)
+    numeric_cols = list(dfp.select(pl.selectors.numeric()).columns)
     if len(numeric_cols) >= 2:
         x = st.selectbox("Scatter X", numeric_cols)
         y = st.selectbox("Scatter Y", numeric_cols, index=1)
@@ -197,11 +212,11 @@ def statistics_page(df, mapping):
 
     benford_df = engine.benfords_law()
 
-    if benford_df.empty:
+    if benford_df.is_empty():
         st.info("Map and prepare the Amount column first to run Benford analysis.")
     else:
         st.plotly_chart(benford_chart(benford_df), width='stretch')
-        st.dataframe(benford_df, width='stretch')
+        show_table(benford_df)
 
         mad = benford_df["absolute_difference"].mean()
         st.metric("Mean Absolute Deviation", f"{mad:.4f}")
@@ -216,19 +231,19 @@ def statistics_page(df, mapping):
             st.error("Benford conformity: Non-conformity detected")
 
 
-def aml_page(df, mapping):
+def aml_page(df: Dataset, mapping):
     st.header("5. AML Indicators")
     results = AnalyticsEngine(df, mapping).aml_indicators()
     if not results:
         st.warning("Map relevant fields such as amount, debit/credit accounts, customer, date and document number.")
         return
     selected = st.selectbox("AML analysis", list(results.keys()))
-    st.dataframe(results[selected], width='stretch')
-    if not results[selected].empty:
+    show_table(results[selected])
+    if not results[selected].is_empty():
         download_dataframe(results[selected], selected.lower().replace(" ", "_"))
 
 
-def risk_page(df, mapping, entity_type: str = "all"):
+def risk_page(df: Dataset, mapping, entity_type: str = "all"):
     st.header("6. Risk Scoring Engine")
     is_legal = (entity_type == "legal")
     state_key = "rules_legal" if is_legal else "rules_physical"
@@ -238,7 +253,6 @@ def risk_page(df, mapping, entity_type: str = "all"):
         st.session_state[state_key] = json.loads(json.dumps(default_rules))
 
     rules = st.session_state[state_key]
-
 
     with st.expander("Rule configuration", expanded=True):
         col_res, _ = st.columns([1, 3])
@@ -263,14 +277,14 @@ def risk_page(df, mapping, entity_type: str = "all"):
                 )
 
     scored = RiskEngine(rules).score(df, mapping)
-    st.dataframe(scored.head(1000), width='stretch')
+    show_table(scored.head(1000))
     st.plotly_chart(
-        px.histogram(scored, x="risk_score", color="risk_level", title=f"Risk score distribution"),
+        px.histogram(scored.head(200_000), x="risk_score", color="risk_level", title="Risk score distribution"),
         width='stretch')
     download_dataframe(scored, f"risk_scoring_{state_key}")
 
 
-def graph_page(df, mapping, lang="am"):
+def graph_page(df: Dataset, mapping, lang="am"):
     st.header("7. Գրաֆային Վերլուծություն (Graph Network)" if lang == "am" else "7. Graph Analysis")
     c1, c2 = st.columns(2)
     src_key = c1.selectbox("Աղբյուր (Source)", ["debit_account", "debit_name", "customer_id"], index=0)
@@ -282,12 +296,12 @@ def graph_page(df, mapping, lang="am"):
         st.json(analyzer.metrics(G))
         st.plotly_chart(network_figure(G), width='stretch')
         st.header("Cycles")
-        st.dataframe(analyzer.cycles_table(G), width='stretch')
+        show_table(analyzer.cycles_table(G))
     except Exception as exc:
         st.error(f"Գրաֆի կառուցման սխալ: {exc}")
 
 
-def money_flow_page(df, mapping):
+def money_flow_page(df: Dataset, mapping):
 
     st.header("Money Flow Analysis")
 
@@ -407,96 +421,45 @@ def money_flow_page(df, mapping):
         )
 
     try:
-        edges = df[[source_col, target_col, amount_col]].copy()
-
-        edges[source_col] = edges[source_col].astype(str).str.strip()
-        edges[target_col] = edges[target_col].astype(str).str.strip()
-
-        edges[amount_col] = pd.to_numeric(
-            edges[amount_col],
-            errors="coerce"
-        ).abs()
-
-        edges = edges.dropna(
-            subset=[source_col, target_col, amount_col]
+        edges = df.lazy().select(
+            pl.col(source_col).cast(pl.String).str.strip_chars().fill_null("nan").alias("__src"),
+            pl.col(target_col).cast(pl.String).str.strip_chars().fill_null("nan").alias("__dst"),
+            pl.col(amount_col).cast(pl.String)
+              .cast(pl.Float64, strict=False).abs().alias("__amt"),
+        ).filter(
+            (pl.col("__src") != "") & (pl.col("__dst") != "")
+            & (pl.col("__src").str.to_lowercase() != "nan")
+            & (pl.col("__dst").str.to_lowercase() != "nan")
+            & pl.col("__amt").is_not_null() & (pl.col("__amt") > 0)
         )
-
-        edges = edges[
-            (edges[source_col] != "")
-            & (edges[target_col] != "")
-            & (edges[source_col].str.lower() != "nan")
-            & (edges[target_col].str.lower() != "nan")
-            & (edges[amount_col] > 0)
-            ]
-
         if min_amount > 0:
-            edges = edges[edges[amount_col] >= min_amount]
+            edges = edges.filter(pl.col("__amt") >= min_amount)
 
-        if edges.empty:
+        flow_df = (
+            edges.group_by("__src", "__dst")
+            .agg(
+                pl.col("__amt").sum().alias("total_amount"),
+                pl.col("__amt").count().alias("transaction_count"),
+                pl.col("__amt").mean().alias("average_amount"),
+                pl.col("__amt").max().alias("max_amount"),
+            )
+            .rename({"__src": source_col, "__dst": target_col})
+        )
+        value_col = {
+            "sum": "total_amount", "count": "transaction_count",
+            "mean": "average_amount", "max": "max_amount",
+        }[aggregation_method]
+        # Materialize the (already aggregated) flows once so the focus filter,
+        # metrics and Sankey work on a DataFrame rather than a LazyFrame.
+        flow_df = flow_df.sort(value_col, descending=True).collect()
+        if flow_df.is_empty():
             st.info("No valid money flow data found after filtering.")
             return
-
-        if aggregation_method == "sum":
-            flow_df = (
-                edges
-                .groupby([source_col, target_col], as_index=False)
-                .agg(
-                    total_amount=(amount_col, "sum"),
-                    transaction_count=(amount_col, "count"),
-                    average_amount=(amount_col, "mean"),
-                    max_amount=(amount_col, "max"),
-                )
-            )
-            value_col = "total_amount"
-
-        elif aggregation_method == "count":
-            flow_df = (
-                edges
-                .groupby([source_col, target_col], as_index=False)
-                .agg(
-                    total_amount=(amount_col, "sum"),
-                    transaction_count=(amount_col, "count"),
-                    average_amount=(amount_col, "mean"),
-                    max_amount=(amount_col, "max"),
-                )
-            )
-            value_col = "transaction_count"
-
-        elif aggregation_method == "mean":
-            flow_df = (
-                edges
-                .groupby([source_col, target_col], as_index=False)
-                .agg(
-                    total_amount=(amount_col, "sum"),
-                    transaction_count=(amount_col, "count"),
-                    average_amount=(amount_col, "mean"),
-                    max_amount=(amount_col, "max"),
-                )
-            )
-            value_col = "average_amount"
-
-        else:
-            flow_df = (
-                edges
-                .groupby([source_col, target_col], as_index=False)
-                .agg(
-                    total_amount=(amount_col, "sum"),
-                    transaction_count=(amount_col, "count"),
-                    average_amount=(amount_col, "mean"),
-                    max_amount=(amount_col, "max"),
-                )
-            )
-            value_col = "max_amount"
-
-        flow_df = flow_df.sort_values(
-            value_col,
-            ascending=False
-        ).reset_index(drop=True)
 
         st.subheader("Optional Focus Filter")
 
         focus_options = ["All"] + sorted(
-            flow_df[source_col].dropna().astype(str).unique().tolist()
+            flow_df[source_col].drop_nulls().cast(pl.String).unique().to_list()
         )
 
         selected_source = st.selectbox(
@@ -506,37 +469,30 @@ def money_flow_page(df, mapping):
         )
 
         if selected_source != "All":
-            flow_df = flow_df[
-                flow_df[source_col].astype(str) == selected_source
-                ]
+            flow_df = flow_df.filter(pl.col(source_col) == selected_source)
 
-        if flow_df.empty:
+        if flow_df.is_empty():
             st.info("No flows available for the selected source.")
             return
 
-        sankey_df = flow_df.head(top_n).copy()
+        sankey_df = flow_df.head(top_n)
 
         st.subheader("Summary Metrics")
 
         m1, m2, m3, m4 = st.columns(4)
 
-        m1.metric("Unique Sources", f"{flow_df[source_col].nunique():,}")
-        m2.metric("Unique Targets", f"{flow_df[target_col].nunique():,}")
-        m3.metric("Flow Links", f"{len(flow_df):,}")
+        m1.metric("Unique Sources", f"{flow_df[source_col].n_unique():,}")
+        m2.metric("Unique Targets", f"{flow_df[target_col].n_unique():,}")
+        m3.metric("Flow Links", f"{flow_df.height:,}")
         m4.metric("Total Amount", f"{flow_df['total_amount'].sum():,.2f}")
 
         st.subheader("Top Aggregated Money Flows")
 
-        display_df = flow_df.copy()
-        for col in ["total_amount", "average_amount", "max_amount"]:
-            if col in display_df.columns:
-                display_df[col] = display_df[col].round(2)
-
-        st.dataframe(
-            display_df.head(500),
-            width='stretch',
-            height=500
+        display_df = flow_df.with_columns(
+            pl.col(c).round(2) for c in ["total_amount", "average_amount", "max_amount"]
         )
+
+        show_table(display_df.head(500), height=500)
 
         st.subheader("Money Flow Sankey Diagram")
 
@@ -585,41 +541,46 @@ def money_flow_page(df, mapping):
         st.error(f"Money Flow Analysis failed: {exc}")
 
 
-def customer_account_page(df, mapping):
+def customer_account_page(df: Dataset, mapping):
     st.header("8. Customer & Account Analytics")
     engine = AnalyticsEngine(df, mapping)
     tab1, tab2 = st.tabs(["Customers", "Accounts"])
     cust = engine.customer_analytics()
     acc = engine.account_analytics()
-    tab1.dataframe(cust, width='stretch')
-    tab2.dataframe(acc, width='stretch')
-    if not cust.empty: download_dataframe(cust, "customer_analytics")
-    if not acc.empty: download_dataframe(acc, "account_analytics")
+    show_table(cust)
+    show_table(acc)
+    if not cust.is_empty(): download_dataframe(cust, "customer_analytics")
+    if not acc.is_empty(): download_dataframe(acc, "account_analytics")
 
 
-def filters_pivot_page(df):
+def filters_pivot_page(df: Dataset):
     st.header("9. Filters, Duplicates & Pivot Tables")
-    filtered = df.copy()
+    filtered = df.lazy()
     with st.expander("Advanced filters", expanded=True):
         col = st.selectbox("Filter column", ["<None>"] + list(df.columns))
         if col != "<None>":
             mode = st.selectbox("Filter mode", ["contains", "starts with", "ends with", "regex", "null", "not null","doesn't contain"])
             val = st.text_input("Filter value")
-            s = filtered[col].astype(str)
+            s = pl.col(col).cast(pl.String).fill_null("nan")
             if st.button("Apply filter"):
-                if mode == "contains": filtered = filtered[s.str.contains(val, case=False, na=False)]
-                elif mode == "starts with": filtered = filtered[s.str.startswith(val, na=False)]
-                elif mode == "ends with": filtered = filtered[s.str.endswith(val, na=False)]
-                elif mode == "regex": filtered = filtered[s.str.contains(val, regex=True, na=False)]
-                elif mode == "null": filtered = filtered[filtered[col].isna()]
-                elif mode == "not null": filtered = filtered[filtered[col].notna()]
-                elif mode == "doesn't contain" : filtered = filtered[~s.str.contains(val, case=False, na=False)]
-    st.dataframe(filtered.head(1000), width='stretch')
+                if mode == "contains": filtered = filtered.filter(s.str.contains(val, case_insensitive=True))
+                elif mode == "starts with": filtered = filtered.filter(s.str.starts_with(val))
+                elif mode == "ends with": filtered = filtered.filter(s.str.ends_with(val))
+                elif mode == "regex": filtered = filtered.filter(s.str.contains(val))
+                elif mode == "null": filtered = filtered.filter(pl.col(col).is_null())
+                elif mode == "not null": filtered = filtered.filter(pl.col(col).is_not_null())
+                elif mode == "doesn't contain" : filtered = filtered.filter(~s.str.contains(val, case_insensitive=True))
+    show_table(filtered.head(1000).collect())
     with st.expander("Duplicate detection"):
         dup_cols = st.multiselect("Duplicate columns", df.columns, key="dup_cols")
         if dup_cols:
-            dups = df[df.duplicated(dup_cols, keep=False)].sort_values(dup_cols)
-            st.dataframe(dups, width='stretch')
+            dups = (
+                df.lazy()
+                .filter(pl.struct(dup_cols).is_duplicated())
+                .sort(dup_cols)
+                .collect()
+            )
+            show_table(dups)
     with st.expander("Pivot builder"):
         rows = st.multiselect("Rows", df.columns, key="pivot_rows")
         cols = st.multiselect("Columns", df.columns, key="pivot_cols")
@@ -627,54 +588,59 @@ def filters_pivot_page(df):
         agg = st.selectbox("Aggregation", ["count", "sum", "mean", "median", "min", "max", "nunique"])
         if rows and vals != "<None>":
             try:
-                pivot = pd.pivot_table(df, index=rows, columns=cols or None, values=vals, aggfunc=agg, fill_value=0)
-                st.dataframe(pivot, width='stretch')
+                needed = list(dict.fromkeys(rows + cols + [vals]))
+                data = df.lazy().select(needed).collect().to_pandas()
+                pivot = pd.pivot_table(
+                    data, index=rows, columns=cols or None, values=vals,
+                    aggfunc=agg, fill_value=0,
+                )
+                show_table(pivot.reset_index())
             except Exception as exc:
                 st.error(exc)
 
 
-
-def export_page(df):
+def export_page(df: Dataset):
     st.header("11. Export")
     download_dataframe(df, "cleaned_transactions")
-    try:
-        st.download_button("Download Parquet", df.to_parquet(index=False), "cleaned_transactions.parquet")
-    except Exception as exc:
-        st.info(f"Parquet export unavailable: {exc}")
-    html = df.head(1000).to_html(index=False)
-    st.download_button("Download HTML report", html.encode("utf-8"), "report.html", "text/html")
-    st.download_button("Download PDF report", dataframe_pdf_bytes(df), "aml_report.pdf", "application/pdf")
-    st.download_button("Download PowerPoint report", dataframe_pptx_bytes(df), "aml_report.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation")
+    download_csv(df, "cleaned_transactions")
 
 
-def split_by_entity_type(df: pd.DataFrame, mapping: Dict[str, str]):
+@st.cache_data(show_spinner=False, max_entries=16)
+def _split_by_entity(ds: Dataset, mapping: Dict[str, str]):
     type_col = mapping.get("doc_type")
     debit_col = mapping.get("debit_account")
     credit_col = mapping.get("credit_account")
 
     if (
-        not type_col or type_col not in df.columns
-        or not debit_col or debit_col not in df.columns
-        or not credit_col or credit_col not in df.columns
+        not type_col or type_col not in ds.columns
+        or not debit_col or debit_col not in ds.columns
+        or not credit_col or credit_col not in ds.columns
     ):
-        return df, df, df
+        return ds, ds, ds
 
-    doc_type = df[type_col].astype(str).str.strip()
-    debit_str = df[debit_col].astype(str).str.strip()
-    credit_str = df[credit_col].astype(str).str.strip()
+    doc_type = pl.col(type_col).cast(pl.String).fill_null("nan").str.strip_chars()
+    debit_str = pl.col(debit_col).cast(pl.String).fill_null("nan").str.strip_chars()
+    credit_str = pl.col(credit_col).cast(pl.String).fill_null("nan").str.strip_chars()
 
     is_outgoing = doc_type.eq("Բանկային հաշվից ելք")
     is_replenishment = doc_type.eq("Բանկային հաշվի համալրում")
 
     is_legal = (
-        (is_outgoing & debit_str.str.startswith(LEGAL_ENTITY_PREFIXES))
-        | (is_replenishment & credit_str.str.startswith(LEGAL_ENTITY_PREFIXES))
+        (is_outgoing & pl.any_horizontal([debit_str.str.starts_with(p) for p in LEGAL_ENTITY_PREFIXES]))
+        | (is_replenishment & pl.any_horizontal([credit_str.str.starts_with(p) for p in LEGAL_ENTITY_PREFIXES]))
     )
 
-    df_legal = df[is_legal].copy()
-    df_phys = df[~is_legal].copy()
+    phys_sig = digest(ds.signature, "split", "phys", mapping)
+    legal_sig = digest(ds.signature, "split", "legal", mapping)
+    df_legal = make_dataset(ds.lazy().filter(is_legal).collect(), legal_sig, "legal")
+    df_phys = make_dataset(ds.lazy().filter(~is_legal).collect(), phys_sig, "phys")
 
-    return df, df_phys, df_legal
+    return ds, df_phys, df_legal
+
+
+def split_by_entity_type(df: Dataset, mapping: Dict[str, str]):
+    return _split_by_entity(df, mapping)
+
 
 def show_choice(df_all, df_phys, df_legal):
     entity_choice = st.radio(
@@ -702,11 +668,15 @@ def show_choice(df_all, df_phys, df_legal):
         st.info(f"Ցուցադրվում են **բոլոր** գործարքները ({len(df_all):,} գործարք):")
     return active_df, entity_type
 
+
 def main():
     init_state()
     st.title(f"{APP_ICON} {APP_TITLE}")
     st.caption("Configurable AML, fraud detection, customer behavior, network analysis and risk scoring for banking transactions.")
     active_df = st.session_state.get("df")
+    if active_df is not None and not isinstance(active_df, Dataset):
+        st.session_state["df"] = None
+        active_df = None
     page = st.sidebar.radio("Navigation", ["Load Data", "Cleaning", "Dashboard", "Statistics", "AML", "Risk Scoring", "Graph Analysis","Money Flow", "Customer/Account", "Filters/Pivot", "Export"])
     if page == "Load Data" or active_df is None:
         load_page()

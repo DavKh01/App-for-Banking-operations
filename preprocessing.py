@@ -1,73 +1,106 @@
-
-"""Data cleaning and transformation service."""
+"""Data cleaning and transformation service (Polars, Parquet-backed)."""
 from __future__ import annotations
 
-from typing import Dict, Any, List, Optional
-import pandas as pd
+from typing import Any, Dict, List, Optional
 
-from utils import safe_datetime, safe_numeric
+import polars as pl
+
+from storage import Dataset, date_col_expr, digest, make_dataset
 
 
 class DataPreprocessor:
-    """Apply configurable cleaning actions to a dataframe."""
+    """Apply configurable cleaning actions to a dataset."""
 
-    def __init__(self, df: pd.DataFrame):
-        self.df = df.copy()
+    def __init__(self, df: Dataset):
+        self.df = df
+        self._lazy = df.lazy()
+        self._ops: List[Any] = []
 
     def remove_duplicates(self, subset: Optional[List[str]] = None) -> "DataPreprocessor":
-        self.df = self.df.drop_duplicates(subset=subset)
+        self._lazy = self._lazy.unique(subset=subset, keep="first")
+        self._ops.append(("dedupe", subset))
         return self
-    def remove_rows(self, target : str) -> "DataPreprocessor":
-        self.df.drop(
-            self.df[self.df.map(lambda x: target in str(x).lower()).any(axis=1)].index, inplace=True
-        )
+
+    def remove_rows(self, target: str) -> "DataPreprocessor":
+        needle = str(target).lower()
+        hit = pl.any_horizontal(
+            pl.all().cast(pl.String).fill_null("nan").str.to_lowercase().str.contains(needle, literal=True)
+        ).fill_null(False)
+        self._lazy = self._lazy.filter(~hit)
+        self._ops.append(("remove_rows", needle))
         return self
+
     def fill_missing(self, columns: List[str], value: Any) -> "DataPreprocessor":
-        for col in columns:
-            self.df[col] = self.df[col].fillna(value)
+        self._lazy = self._lazy.with_columns(pl.col(c).fill_null(value) for c in columns)
+        self._ops.append(("fill", columns, value))
         return self
 
     def remove_missing(self, subset: Optional[List[str]] = None) -> "DataPreprocessor":
-        self.df = self.df.dropna(subset=subset)
+        self._lazy = self._lazy.drop_nulls(subset=subset)
+        self._ops.append(("drop_nulls", subset))
         return self
 
     def trim_spaces(self, columns: List[str]) -> "DataPreprocessor":
-        for col in columns:
-            self.df[col] = self.df[col].astype(str).str.strip()
+        self._lazy = self._lazy.with_columns(
+            pl.col(c).cast(pl.String).fill_null("nan").str.strip_chars() for c in columns
+        )
+        self._ops.append(("trim", columns))
         return self
 
     def change_case(self, columns: List[str], mode: str) -> "DataPreprocessor":
-        for col in columns:
-            s = self.df[col].astype(str)
-            self.df[col] = s.str.upper() if mode == "upper" else s.str.lower()
+        exprs = []
+        for c in columns:
+            s = pl.col(c).cast(pl.String).fill_null("nan")
+            exprs.append(s.str.to_uppercase() if mode == "upper" else s.str.to_lowercase())
+        self._lazy = self._lazy.with_columns(exprs)
+        self._ops.append(("case", columns, mode))
         return self
 
     def replace_values(self, column: str, old: str, new: str) -> "DataPreprocessor":
-        self.df[column] = self.df[column].replace(old, new)
+        self._lazy = self._lazy.with_columns(
+            pl.when(pl.col(column) == old).then(pl.lit(new)).otherwise(pl.col(column)).alias(column)
+        )
+        self._ops.append(("replace", column, old, new))
         return self
 
     def rename_columns(self, mapping: Dict[str, str]) -> "DataPreprocessor":
-        self.df = self.df.rename(columns={k: v for k, v in mapping.items() if v})
+        rename = {k: v for k, v in mapping.items() if v}
+        self._lazy = self._lazy.rename(rename)
+        self._ops.append(("rename", rename))
         return self
-    def delete_rows(self, column: str, target : str) -> "DataPreprocessor":
-        self.df = self.df[~self.df[column].str.lower().str.contains(target)]
+
+    def delete_rows(self, column: str, target: str) -> "DataPreprocessor":
+        hit = pl.col(column).cast(pl.String).str.to_lowercase().str.contains(target).fill_null(False)
+        self._lazy = self._lazy.filter(~hit)
+        self._ops.append(("delete_rows", column, target))
         return self
 
     def convert_dtype(self, column: str, dtype: str) -> "DataPreprocessor":
         if dtype == "numeric":
-            self.df[column] = safe_numeric(self.df[column])
+            expr = pl.col(column).cast(pl.String).str.replace_all(",", "").str.replace_all(" ", "").cast(pl.Float64, strict=False)
         elif dtype == "datetime":
-            self.df[column] = safe_datetime(self.df[column])
+            expr = date_col_expr(column, self._lazy.collect_schema().get(column))
         elif dtype == "string":
-            self.df[column] = self.df[column].astype("string")
-        elif dtype == "category":
-            self.df[column] = self.df[column].astype("category")
+            expr = pl.col(column).cast(pl.String)
+        else:
+            expr = pl.col(column).cast(pl.Categorical)
+        self._lazy = self._lazy.with_columns(expr.alias(column))
+        self._ops.append(("dtype", column, dtype))
         return self
 
-    def normalize_currency(self, amount_col: str, currency_col: str, rates: Dict[str, float], target_col: str = "normalized_amount") -> "DataPreprocessor":
-        amounts = safe_numeric(self.df[amount_col])
-        self.df[target_col] = amounts * self.df[currency_col].map(rates).fillna(1.0)
+    def normalize_currency(self, amount_col: str, currency_col: str, rates: Dict[str, float],
+                           target_col: str = "normalized_amount") -> "DataPreprocessor":
+        rate = pl.col(currency_col).cast(pl.String).replace_strict(
+            {str(k): float(v) for k, v in rates.items()}, default=1.0, return_dtype=pl.Float64
+        )
+        self._lazy = self._lazy.with_columns(
+            (pl.col(amount_col).cast(pl.String).str.replace_all(",", "").str.replace_all(" ", "")
+             .cast(pl.Float64, strict=False) * rate).alias(target_col)
+        )
+        self._ops.append(("normalize_currency", amount_col, currency_col, rates))
         return self
 
-    def result(self) -> pd.DataFrame:
-        return self.df
+    def result(self) -> Dataset:
+        frame = self._lazy.collect()
+        signature = digest(self.df.signature, "clean", self._ops)
+        return make_dataset(frame, signature, "clean")
