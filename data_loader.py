@@ -147,7 +147,7 @@ def _frame_from_excel(data: bytes, options: LoadOptions) -> pl.DataFrame:
                              schema={c: pl.String for c in columns}, strict=False)
     if options.load_as_text:
         frame = frame.select(pl.all().cast(pl.String))
-    return _normalize_text(frame)
+    return frame
 
 
 def _sniff_delimiter(data: bytes) -> Optional[str]:
