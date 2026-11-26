@@ -90,7 +90,7 @@ def sidebar_mapping(df: Dataset) -> Dict[str, str]:
 
 def load_page():
     st.header("1. Load Data")
-    uploaded = st.file_uploader("Upload Excel, CSV or TSV", type=["xlsx", "xls", "csv", "tsv"])
+    uploaded = st.file_uploader("Upload Excel, CSV or TSV", type=["xlsx", "xls", "csv", "tsv"],max_upload_size=1024)
     if not uploaded:
         st.info("Upload a banking transaction dataset to begin.")
         return
