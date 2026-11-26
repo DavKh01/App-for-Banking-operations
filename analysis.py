@@ -72,7 +72,6 @@ def _source(ds: Dataset, mapping: Dict[str, str], fill_missing: bool = True) -> 
         select += f', {", ".join(additions)}'
 
     return f"SELECT {select} FROM {sql_source(ds)}"
-
 def _group_keys(mapping: Dict[str, str]) -> list[str]:
     keys = []
     customer = get_col(mapping, "customer_id")
