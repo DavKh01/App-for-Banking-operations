@@ -42,36 +42,26 @@ def _source(ds: Dataset, mapping: Dict[str, str], fill_missing: bool = True) -> 
 
     cols = []
 
+    for col in ds.columns:
+        if col == amount:
+            cols.append(f'{num_expr(col)} AS "{col}"')
+        elif col == date:
+            cols.append(f'{date_expr(col)} AS "{col}"')
+        else:
+            cols.append(f'"{col}"')
+
     if amount:
-        cols.append(f'{num_expr(amount)} AS "{amount}"')
         cols.append(f'{num_expr(amount)} AS "_amount"')
     elif fill_missing:
         cols.append('NULL::DOUBLE AS "_amount"')
 
     if date:
-        cols.append(f'{date_expr(date)} AS "{date}"')
         cols.append(f'{date_expr(date)} AS "_date"')
     elif fill_missing:
         cols.append('NULL::TIMESTAMP AS "_date"')
 
-    replacements = []
-    additions = []
-
-    for col in cols:
-        if ' AS "_amount"' in col or ' AS "_date"' in col:
-            additions.append(col)
-        else:
-            replacements.append(col)
-
-    select = "*"
-
-    if replacements:
-        select += f' REPLACE ({", ".join(replacements)})'
-
-    if additions:
-        select += f', {", ".join(additions)}'
-
-    return f"SELECT {select} FROM {sql_source(ds)}"
+    return f"SELECT {', '.join(cols)} FROM {sql_source(ds)}"
+    
 def _group_keys(mapping: Dict[str, str]) -> list[str]:
     keys = []
     customer = get_col(mapping, "customer_id")
