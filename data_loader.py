@@ -235,7 +235,7 @@ class DataLoader:
                     raise
                 separator = guessed
                 _read_csv_to_parquet(file_bytes, options, separator, path)
-            _normalize_parquet(path)
+            #_normalize_parquet(path)
 
         prune_cache()
         return _dataset_from_parquet(path, signature)
