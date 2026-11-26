@@ -44,20 +44,19 @@ def _source(ds: Dataset, mapping: Dict[str, str], fill_missing: bool = True) -> 
 
     if amount:
         cols.append(f'{num_expr(amount)} AS "{amount}"')
-        cols.append(f'{num_expr(amount)} AS "_amount"')
     elif fill_missing:
         cols.append('NULL::DOUBLE AS "_amount"')
 
     if date:
         cols.append(f'{date_expr(date)} AS "{date}"')
-        cols.append(f'{date_expr(date)} AS "_date"')
     elif fill_missing:
         cols.append('NULL::TIMESTAMP AS "_date"')
 
-    select = ", ".join(["*"] + cols) if cols else "*"
+    select = f'* REPLACE ({", ".join(cols)})' if cols and amount and date else (
+        f'SELECT * REPLACE ({", ".join(cols)})'
+    )
 
     return f"SELECT {select} FROM {sql_source(ds)}"
-
 
 def _group_keys(mapping: Dict[str, str]) -> list[str]:
     keys = []
