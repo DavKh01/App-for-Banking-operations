@@ -44,17 +44,32 @@ def _source(ds: Dataset, mapping: Dict[str, str], fill_missing: bool = True) -> 
 
     if amount:
         cols.append(f'{num_expr(amount)} AS "{amount}"')
+        cols.append(f'{num_expr(amount)} AS "_amount"')
     elif fill_missing:
         cols.append('NULL::DOUBLE AS "_amount"')
 
     if date:
         cols.append(f'{date_expr(date)} AS "{date}"')
+        cols.append(f'{date_expr(date)} AS "_date"')
     elif fill_missing:
         cols.append('NULL::TIMESTAMP AS "_date"')
 
-    select = f'* REPLACE ({", ".join(cols)})' if cols and amount and date else (
-        f'SELECT * REPLACE ({", ".join(cols)})'
-    )
+    replacements = []
+    additions = []
+
+    for col in cols:
+        if ' AS "_amount"' in col or ' AS "_date"' in col:
+            additions.append(col)
+        else:
+            replacements.append(col)
+
+    select = "*"
+
+    if replacements:
+        select += f' REPLACE ({", ".join(replacements)})'
+
+    if additions:
+        select += f', {", ".join(additions)}'
 
     return f"SELECT {select} FROM {sql_source(ds)}"
 
