@@ -56,14 +56,14 @@ def _file_bytes(source) -> bytes:
     raise TypeError("Unsupported file source")
 
 
-def _normalize_text(frame: pl.DataFrame) -> pl.DataFrame:
-    """Apply the app's Armenian spelling fix on string columns only."""
-    string_cols = [c for c, dtype in zip(frame.columns, frame.dtypes) if dtype == pl.String]
-    if not string_cols:
-        return frame
-    return frame.with_columns(
-        pl.col(c).str.replace_all("եվ", "և") for c in string_cols
-    )
+# def _normalize_text(frame: pl.DataFrame) -> pl.DataFrame:
+#     """Apply the app's Armenian spelling fix on string columns only."""
+#     string_cols = [c for c, dtype in zip(frame.columns, frame.dtypes) if dtype == pl.String]
+#     if not string_cols:
+#         return frame
+#     return frame.with_columns(
+#         pl.col(c).str.replace_all("եվ", "և") for c in string_cols
+#     )
 
 
 def _dataset_from_parquet(path: str, signature: str) -> Dataset:
@@ -189,17 +189,17 @@ def _read_csv_to_parquet(data: bytes, options: LoadOptions, separator: str,
             pass
 
 
-def _normalize_parquet(path: str) -> None:
-    """Apply the Armenian spelling fix as a streaming Parquet pass."""
-    lazy = pl.scan_parquet(path)
-    string_cols = [c for c, dtype in lazy.collect_schema().items() if dtype == pl.String]
-    if not string_cols:
-        return
-    tmp = f"{path}.norm"
-    lazy.with_columns(
-        pl.col(c).str.replace_all("եվ", "և") for c in string_cols
-    ).sink_parquet(tmp, compression="zstd")
-    os.replace(tmp, path)
+# def _normalize_parquet(path: str) -> None:
+#     """Apply the Armenian spelling fix as a streaming Parquet pass."""
+#     lazy = pl.scan_parquet(path)
+#     string_cols = [c for c, dtype in lazy.collect_schema().items() if dtype == pl.String]
+#     if not string_cols:
+#         return
+#     tmp = f"{path}.norm"
+#     lazy.with_columns(
+#         pl.col(c).str.replace_all("եվ", "և") for c in string_cols
+#     ).sink_parquet(tmp, compression="zstd")
+#     os.replace(tmp, path)
 
 
 class DataLoader:
