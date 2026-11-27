@@ -273,13 +273,13 @@ def filters_pivot_page(df: Dataset):
             val = st.text_input("Filter value")
             s = pl.col(col).cast(pl.String).fill_null("nan")
             if st.button("Apply filter"):
-                if mode == "contains": filtered = filtered.filter(s.str.contains(val, case_insensitive=True))
+                if mode == "contains": filtered = filtered.filter(s.str.to_lowercase().str.contains(val.lower(), literal=True))
                 elif mode == "starts with": filtered = filtered.filter(s.str.starts_with(val))
                 elif mode == "ends with": filtered = filtered.filter(s.str.ends_with(val))
                 elif mode == "regex": filtered = filtered.filter(s.str.contains(val))
                 elif mode == "null": filtered = filtered.filter(pl.col(col).is_null())
                 elif mode == "not null": filtered = filtered.filter(pl.col(col).is_not_null())
-                elif mode == "doesn't contain" : filtered = filtered.filter(~s.str.contains(val, case_insensitive=True))
+                elif mode == "doesn't contain" : filtered = filtered.filter(~s.str.to_lowercase().str.contains(val.lower(), literal=True))
     show_table(filtered.head(1000).collect())
     with st.expander("Duplicate detection"):
         dup_cols = st.multiselect("Duplicate columns", df.columns, key="dup_cols")

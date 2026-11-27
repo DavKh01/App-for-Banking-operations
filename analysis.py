@@ -14,17 +14,6 @@ from storage import Dataset, date_expr, lit, num_expr, q, query, sql_source
 from utils import get_col
 
 LEGAL_ENTITY_PREFIXES = (
-    "3020200",
-    "3001",
-    "3000200",
-    "3001400",
-    "3021",
-    "3030",
-    "3011",
-    "324",
-    "39",
-    "3030",
-    "3020",
     "4310",
     "43123",
     "43124",
