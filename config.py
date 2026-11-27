@@ -7,6 +7,12 @@ from typing import Dict, List, Any
 
 APP_TITLE = "Banking AML, Fraud & Risk Analytics"
 APP_ICON = "🏦"
+
+# Currency buy/sell document type and defaults for fragmentation checks.
+EXCHANGE_DOC_TYPE = "Արտարժույթի առք/վաճառք"
+DEFAULT_EXCHANGE_THRESHOLD = 100000.0
+DEFAULT_EXCHANGE_MIN_COUNT = 3
+DEFAULT_EXCHANGE_WINDOW_HOURS = 1.0
 DEFAULT_RISK_LEVELS = {
     "Low": (0, 25),
     "Medium": (25, 50),
