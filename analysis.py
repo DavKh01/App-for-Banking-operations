@@ -244,47 +244,45 @@ def _exchange_fragments(src: str, mapping: Dict[str, str], doc_type_value: str,
         """)
 
     if user and get_col(mapping, "transaction_date"):
+        # Anchor on each transaction and take the following `seconds` window.
+        # Growing the window can only add transactions, never drop a match.
         results["Fragmented exchange (by user, time window)"] = query(f"""
             WITH ex AS (
                 SELECT *, {q(user)} AS "_user"
                 FROM ({base})
                 WHERE {q(user)} IS NOT NULL AND "_date" IS NOT NULL
             ),
-            marks AS (
-                SELECT *,
-                    CASE WHEN lag("_user") OVER (ORDER BY "_user", "_date") IS DISTINCT FROM "_user"
-                           OR date_diff('second', lag("_date") OVER (ORDER BY "_user", "_date"), "_date") > {seconds}
-                         THEN 1 ELSE 0 END AS "_new_group"
-                FROM ex
-            ),
-            groups AS (
-                SELECT *, sum("_new_group") OVER (
-                    PARTITION BY "_user" ORDER BY "_date"
-                    ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
-                ) AS "_grp"
-                FROM marks
-            ),
-            agg AS (
-                SELECT "_user", "_grp",
+            windows AS (
+                SELECT a."_user" AS "_user",
+                       a."_date" AS window_start,
+                       max(b."_date") AS window_end,
                        count(*) AS transaction_count,
-                       sum("_abs_amount") AS total_amount,
-                       min("_abs_amount") AS min_amount,
-                       max("_abs_amount") AS max_amount,
-                       min("_date") AS window_start,
-                       max("_date") AS window_end,
-                       string_agg(printf('%,.2f', "_abs_amount"), ', ') AS amounts
-                FROM groups
-                GROUP BY "_user", "_grp"
-                HAVING count(*) >= {min_count}
-                   AND sum("_abs_amount") >= {threshold!r}
-                   AND date_diff('second', min("_date"), max("_date")) <= {seconds}
+                       sum(b."_abs_amount") AS total_amount,
+                       min(b."_abs_amount") AS min_amount,
+                       max(b."_abs_amount") AS max_amount,
+                       string_agg(printf('%,.2f', b."_abs_amount"), ', ' ORDER BY b."_date") AS amounts,
+                       string_agg(strftime(b."_date", '%Y-%m-%d %H:%M:%S'), ', ' ORDER BY b."_date") AS member_key
+                FROM ex a
+                JOIN ex b
+                  ON a."_user" = b."_user"
+                 AND b."_date" >= a."_date"
+                 AND date_diff('second', a."_date", b."_date") <= {seconds}
+                GROUP BY a."_user", a."_date"
+                HAVING count(*) >= {min_count} AND sum(b."_abs_amount") >= {threshold!r}
+            ),
+            ranked AS (
+                SELECT *, row_number() OVER (
+                    PARTITION BY "_user", member_key ORDER BY window_start
+                ) AS rn
+                FROM windows
             )
             SELECT "_user" AS "user", transaction_count, total_amount,
                    min_amount, max_amount,
                    strftime(window_start, '%Y-%m-%d %H:%M:%S') AS window_start,
                    strftime(window_end, '%Y-%m-%d %H:%M:%S') AS window_end,
                    amounts
-            FROM agg
+            FROM ranked
+            WHERE rn = 1
             ORDER BY total_amount DESC
             LIMIT 1000
         """)
