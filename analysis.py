@@ -10,6 +10,8 @@ from typing import Dict, Optional
 import polars as pl
 import streamlit as st
 
+from config import (DEFAULT_EXCHANGE_MIN_COUNT, DEFAULT_EXCHANGE_THRESHOLD,
+                    DEFAULT_EXCHANGE_WINDOW_HOURS, EXCHANGE_DOC_TYPE)
 from storage import Dataset, date_expr, lit, num_expr, q, query, sql_source
 from utils import get_col
 
@@ -180,7 +182,120 @@ def _benford(ds: Dataset, mapping: Dict[str, str]) -> pl.DataFrame:
 
 
 @st.cache_data(**_CACHE)
-def _aml(ds: Dataset, mapping: Dict[str, str]) -> Dict[str, pl.DataFrame]:
+def exchange_doc_type(ds: Dataset, mapping: Dict[str, str]) -> str | None:
+    """Return the doc type when the first (or first non-empty) row is a currency exchange."""
+    type_col = get_col(mapping, "doc_type")
+    if not type_col or type_col not in ds.columns:
+        return None
+    value_sql = f"TRIM(CAST({q(type_col)} AS VARCHAR))"
+    first = query(f"SELECT {value_sql} AS v FROM {sql_source(ds)} LIMIT 1")
+    value = first.item() if not first.is_empty() else None
+    if not value:
+        row = query(
+            f"SELECT {value_sql} AS v FROM {sql_source(ds)} "
+            f"WHERE {value_sql} IS NOT NULL AND {value_sql} <> '' LIMIT 1"
+        )
+        value = row.item() if not row.is_empty() else None
+    if value and str(value).casefold() == EXCHANGE_DOC_TYPE.casefold():
+        return str(value)
+    return None
+
+
+def _exchange_fragments(src: str, mapping: Dict[str, str], doc_type_value: str,
+                        threshold: float, min_count: int,
+                        window_hours: float) -> Dict[str, pl.DataFrame]:
+    """Find small exchanges that together exceed a threshold (structuring)."""
+    type_col = get_col(mapping, "doc_type")
+    if not type_col:
+        return {}
+    threshold = float(threshold)
+    min_count = max(2, int(min_count))
+    seconds = int(round(float(window_hours) * 3600))
+    if threshold <= 0 or seconds <= 0:
+        return {}
+
+    results: Dict[str, pl.DataFrame] = {}
+    base = f"""
+        SELECT *, abs("_amount") AS "_abs_amount"
+        FROM ({src})
+        WHERE TRIM(CAST({q(type_col)} AS VARCHAR)) = {lit(doc_type_value)}
+          AND "_amount" IS NOT NULL
+          AND abs("_amount") < {threshold!r}
+    """
+    customer = get_col(mapping, "customer_id")
+    user = get_col(mapping, "user")
+
+    if customer:
+        results["Fragmented exchange (by customer)"] = query(f"""
+            WITH ex AS (
+                SELECT * FROM ({base}) WHERE {q(customer)} IS NOT NULL
+            )
+            SELECT {q(customer)} AS customer_id,
+                   count(*) AS transaction_count,
+                   sum("_abs_amount") AS total_amount,
+                   min("_abs_amount") AS min_amount,
+                   max("_abs_amount") AS max_amount,
+                   string_agg(printf('%,.2f', "_abs_amount"), ', ') AS amounts
+            FROM ex
+            GROUP BY {q(customer)}
+            HAVING count(*) >= {min_count} AND sum("_abs_amount") >= {threshold!r}
+            ORDER BY total_amount DESC
+            LIMIT 1000
+        """)
+
+    if user and get_col(mapping, "transaction_date"):
+        results["Fragmented exchange (by user, time window)"] = query(f"""
+            WITH ex AS (
+                SELECT *, {q(user)} AS "_user"
+                FROM ({base})
+                WHERE {q(user)} IS NOT NULL AND "_date" IS NOT NULL
+            ),
+            marks AS (
+                SELECT *,
+                    CASE WHEN lag("_user") OVER (ORDER BY "_user", "_date") IS DISTINCT FROM "_user"
+                           OR date_diff('second', lag("_date") OVER (ORDER BY "_user", "_date"), "_date") > {seconds}
+                         THEN 1 ELSE 0 END AS "_new_group"
+                FROM ex
+            ),
+            groups AS (
+                SELECT *, sum("_new_group") OVER (
+                    PARTITION BY "_user" ORDER BY "_date"
+                    ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+                ) AS "_grp"
+                FROM marks
+            ),
+            agg AS (
+                SELECT "_user", "_grp",
+                       count(*) AS transaction_count,
+                       sum("_abs_amount") AS total_amount,
+                       min("_abs_amount") AS min_amount,
+                       max("_abs_amount") AS max_amount,
+                       min("_date") AS window_start,
+                       max("_date") AS window_end,
+                       string_agg(printf('%,.2f', "_abs_amount"), ', ') AS amounts
+                FROM groups
+                GROUP BY "_user", "_grp"
+                HAVING count(*) >= {min_count}
+                   AND sum("_abs_amount") >= {threshold!r}
+                   AND date_diff('second', min("_date"), max("_date")) <= {seconds}
+            )
+            SELECT "_user" AS "user", transaction_count, total_amount,
+                   min_amount, max_amount,
+                   strftime(window_start, '%Y-%m-%d %H:%M:%S') AS window_start,
+                   strftime(window_end, '%Y-%m-%d %H:%M:%S') AS window_end,
+                   amounts
+            FROM agg
+            ORDER BY total_amount DESC
+            LIMIT 1000
+        """)
+    return results
+
+
+@st.cache_data(**_CACHE)
+def _aml(ds: Dataset, mapping: Dict[str, str], exchange_type: str | None = None,
+         exchange_threshold: float = DEFAULT_EXCHANGE_THRESHOLD,
+         exchange_min_count: int = DEFAULT_EXCHANGE_MIN_COUNT,
+         exchange_window_hours: float = DEFAULT_EXCHANGE_WINDOW_HOURS) -> Dict[str, pl.DataFrame]:
     src = _source(ds, mapping)
     results: Dict[str, pl.DataFrame] = {}
     amount = bool(get_col(mapping, "amount"))
@@ -289,6 +404,12 @@ def _aml(ds: Dataset, mapping: Dict[str, str]) -> Dict[str, pl.DataFrame]:
             FROM g GROUP BY {group} ORDER BY branch_count DESC LIMIT 1000
         """)
 
+    if exchange_type and exchange_doc_type(ds, mapping) == exchange_type:
+        results.update(_exchange_fragments(
+            src, mapping, exchange_type, exchange_threshold,
+            exchange_min_count, exchange_window_hours,
+        ))
+
     return results
 
 
@@ -388,8 +509,12 @@ class AnalyticsEngine:
     def time_series(self, freq: str = "D") -> pl.DataFrame:
         return _time_series(self.df, self.mapping, freq)
 
-    def aml_indicators(self) -> Dict[str, pl.DataFrame]:
-        return _aml(self.df, self.mapping)
+    def aml_indicators(self, exchange_type: str | None = None,
+                       exchange_threshold: float = DEFAULT_EXCHANGE_THRESHOLD,
+                       exchange_min_count: int = DEFAULT_EXCHANGE_MIN_COUNT,
+                       exchange_window_hours: float = DEFAULT_EXCHANGE_WINDOW_HOURS) -> Dict[str, pl.DataFrame]:
+        return _aml(self.df, self.mapping, exchange_type, exchange_threshold,
+                    exchange_min_count, exchange_window_hours)
 
     def customer_analytics(self) -> pl.DataFrame:
         return _customer_analytics(self.df, self.mapping)

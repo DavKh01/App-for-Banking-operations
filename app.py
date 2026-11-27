@@ -11,10 +11,11 @@ import plotly.express as px
 import streamlit as st
 
 from config import APP_TITLE, APP_ICON, CANONICAL_FIELDS, DEFAULT_RULES, CANONICAL_FIELDS_2, CANONICAL_FIELDS_3, \
-    LEGAL_ENTITY_PREFIXES, DEFAULT_RULES_LEGAL
+    LEGAL_ENTITY_PREFIXES, DEFAULT_RULES_LEGAL, DEFAULT_EXCHANGE_MIN_COUNT, DEFAULT_EXCHANGE_THRESHOLD, \
+    DEFAULT_EXCHANGE_WINDOW_HOURS
 from data_loader import DataLoader, LoadOptions
 from preprocessing import DataPreprocessor
-from analysis import AnalyticsEngine
+from analysis import AnalyticsEngine, exchange_doc_type
 from risk_engine import RiskEngine
 from graph_analysis import TransactionGraphAnalyzer
 from visualization import histogram, boxplot, line_chart, heatmap_corr, network_figure, sankey_from_edges, benford_chart
@@ -194,7 +195,24 @@ def dashboard_page(df: Dataset, mapping):
 
 def aml_page(df: Dataset, mapping):
     st.header("5. AML Indicators")
-    results = AnalyticsEngine(df, mapping).aml_indicators()
+    exchange_type = exchange_doc_type(df, mapping)
+    threshold = DEFAULT_EXCHANGE_THRESHOLD
+    min_count = DEFAULT_EXCHANGE_MIN_COUNT
+    window_hours = DEFAULT_EXCHANGE_WINDOW_HOURS
+    if exchange_type:
+        c1, c2, c3 = st.columns(3)
+        threshold = c1.number_input("Fragmentation threshold", min_value=1.0,
+                                    value=float(DEFAULT_EXCHANGE_THRESHOLD), step=1000.0)
+        min_count = c2.number_input("Minimum transactions", min_value=2, max_value=50,
+                                    value=int(DEFAULT_EXCHANGE_MIN_COUNT), step=1)
+        window_hours = c3.number_input("User time window (hours)", min_value=0.1, max_value=24.0,
+                                       value=float(DEFAULT_EXCHANGE_WINDOW_HOURS), step=0.5)
+    results = AnalyticsEngine(df, mapping).aml_indicators(
+        exchange_type=exchange_type,
+        exchange_threshold=threshold,
+        exchange_min_count=int(min_count),
+        exchange_window_hours=float(window_hours),
+    )
     if not results:
         st.warning("Map relevant fields such as amount, debit/credit accounts, customer, date and document number.")
         return
