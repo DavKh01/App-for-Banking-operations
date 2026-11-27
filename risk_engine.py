@@ -77,7 +77,9 @@ def _score(ds: Dataset, mapping: Dict[str, str], rules: Dict[str, Dict[str, Any]
 
     if dates is not None:
         apply_rule("night_activity", dates.dt.hour().is_between(0, 5, closed="both"))
-        apply_rule("weekend_activity", dates.dt.weekday() >= 5)
+        # Polars weekday(): Monday=1 ... Saturday=6, Sunday=7
+        # (DuckDB dayofweek() in analysis.py uses Sunday=0 ... Saturday=6)
+        apply_rule("weekend_activity", dates.dt.weekday().is_in([6, 7]))
 
     if debit and debit in columns:
         cnt = pl.col(debit).count().over(debit)
