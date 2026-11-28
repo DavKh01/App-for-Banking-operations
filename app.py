@@ -239,12 +239,15 @@ def aml_page(df: Dataset, mapping):
     st.header("5. AML Indicators")
     exchange_type = exchange_doc_type(df, mapping)
     engine = AnalyticsEngine(df, mapping)
-    # First run with defaults only to obtain the available analysis names.
+    # Use the last entered values (or defaults on first run) for both exchange analyses.
+    threshold = float(st.session_state.get("exchange_threshold", DEFAULT_EXCHANGE_THRESHOLD))
+    min_count = int(st.session_state.get("exchange_min_count", DEFAULT_EXCHANGE_MIN_COUNT))
+    window_hours = float(st.session_state.get("exchange_window_hours", DEFAULT_EXCHANGE_WINDOW_HOURS))
     results = engine.aml_indicators(
         exchange_type=exchange_type,
-        exchange_threshold=DEFAULT_EXCHANGE_THRESHOLD,
-        exchange_min_count=DEFAULT_EXCHANGE_MIN_COUNT,
-        exchange_window_hours=DEFAULT_EXCHANGE_WINDOW_HOURS,
+        exchange_threshold=threshold,
+        exchange_min_count=min_count,
+        exchange_window_hours=window_hours,
     )
     if not results:
         st.warning("Map relevant fields such as amount, debit/credit accounts, customer, date and document number.")
