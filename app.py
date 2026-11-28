@@ -34,23 +34,65 @@ def init_state():
 
 
 def show_table(data, *, height=None):
-    """Render a table with readable widths and left-to-right scrolling.
+    """Render wide tables with an always-visible scroll area and no clipped columns.
 
-    Keeping every column at a fixed minimum width makes wide datasets wider
-    than the page, so Streamlit shows a horizontal scrollbar instead of
-    squeezing (and truncating) the values.  No column is pinned.
+    Fixed column widths make the grid wider than the page, so it scrolls
+    horizontally instead of squeezing values. Long text columns get extra
+    width, and an explicit height keeps the horizontal scrollbar in view.
     """
-    columns = list(getattr(data, "columns", []))
+    columns = [str(col) for col in getattr(data, "columns", [])]
+
+    # Detect long text values (e.g. risk_reasons) so they get more room.
+    records = []
+    long_columns = set()
+    try:
+        sample = data.head(100)
+        records = (sample.to_dicts() if hasattr(sample, "to_dicts")
+                   else sample.to_dict(orient="records"))
+        for record in records:
+            for name in columns:
+                value = record.get(name)
+                if value is not None and len(str(value)) > 80:
+                    long_columns.add(name)
+    except Exception:
+        pass
+
     config = {
-        str(col): st.column_config.Column(width=180)
-        for col in columns
+        name: st.column_config.Column(width=600 if name in long_columns else 180)
+        for name in columns
     }
-    kwargs = {"width": "stretch"}
-    if height is not None:
-        kwargs["height"] = height
+    if height is None:
+        try:
+            rows = len(data)
+        except Exception:
+            rows = 10
+        height = min(600, max(220, 40 + 36 * min(rows, 15)))
+    kwargs = {
+        "width": "stretch",
+        "height": height,
+        "hide_index": True,
+    }
     if config:
         kwargs["column_config"] = config
+    # Native Streamlit feature (>=1.43): taller rows wrap long text automatically.
+    # row_height applies to the whole table, so use the smallest value that fits
+    # the longest value. ~600px wide column holds about 100 characters per line.
+    if long_columns:
+        chars_per_line = 100
+        max_lines = max(
+            (
+                sum(max(1, (len(segment) + chars_per_line - 1) // chars_per_line)
+                    for segment in str(record.get(name)).splitlines() or [""])
+                for record in records
+                for name in long_columns
+                if record.get(name) is not None
+            ),
+            default=1,
+        )
+        if max_lines > 1:
+            kwargs["row_height"] = 24 + 18 * max_lines
     st.dataframe(data, **kwargs)
+
 
 
 def sidebar_mapping(df: Dataset) -> Dict[str, str]:
@@ -196,27 +238,37 @@ def dashboard_page(df: Dataset, mapping):
 def aml_page(df: Dataset, mapping):
     st.header("5. AML Indicators")
     exchange_type = exchange_doc_type(df, mapping)
-    threshold = DEFAULT_EXCHANGE_THRESHOLD
-    min_count = DEFAULT_EXCHANGE_MIN_COUNT
-    window_hours = DEFAULT_EXCHANGE_WINDOW_HOURS
-    if exchange_type:
-        c1, c2, c3 = st.columns(3)
-        threshold = c1.number_input("Fragmentation threshold", min_value=1.0,
-                                    value=float(DEFAULT_EXCHANGE_THRESHOLD), step=1000.0)
-        min_count = c2.number_input("Minimum transactions", min_value=2, max_value=50,
-                                    value=int(DEFAULT_EXCHANGE_MIN_COUNT), step=1)
-        window_hours = c3.number_input("User time window (hours)", min_value=0.1, max_value=24.0,
-                                       value=float(DEFAULT_EXCHANGE_WINDOW_HOURS), step=0.5)
-    results = AnalyticsEngine(df, mapping).aml_indicators(
+    engine = AnalyticsEngine(df, mapping)
+    # First run with defaults only to obtain the available analysis names.
+    results = engine.aml_indicators(
         exchange_type=exchange_type,
-        exchange_threshold=threshold,
-        exchange_min_count=int(min_count),
-        exchange_window_hours=float(window_hours),
+        exchange_threshold=DEFAULT_EXCHANGE_THRESHOLD,
+        exchange_min_count=DEFAULT_EXCHANGE_MIN_COUNT,
+        exchange_window_hours=DEFAULT_EXCHANGE_WINDOW_HOURS,
     )
     if not results:
         st.warning("Map relevant fields such as amount, debit/credit accounts, customer, date and document number.")
         return
     selected = st.selectbox("AML analysis", list(results.keys()))
+
+    fragmented_key = "Fragmented exchange (by user, time window)"
+    if exchange_type and selected == fragmented_key:
+        c1, c2, c3 = st.columns(3)
+        threshold = c1.number_input("Fragmentation threshold", min_value=1.0,
+                                    value=float(DEFAULT_EXCHANGE_THRESHOLD), step=1000.0,
+                                    key="exchange_threshold")
+        min_count = c2.number_input("Minimum transactions", min_value=2, max_value=50,
+                                    value=int(DEFAULT_EXCHANGE_MIN_COUNT), step=1,
+                                    key="exchange_min_count")
+        window_hours = c3.number_input("User time window (hours)", min_value=0.1, max_value=24.0,
+                                       value=float(DEFAULT_EXCHANGE_WINDOW_HOURS), step=0.5,
+                                       key="exchange_window_hours")
+        results = engine.aml_indicators(
+            exchange_type=exchange_type,
+            exchange_threshold=threshold,
+            exchange_min_count=int(min_count),
+            exchange_window_hours=float(window_hours),
+        )
     show_table(results[selected])
     if not results[selected].is_empty():
         download_dataframe(results[selected], selected.lower().replace(" ", "_"))
