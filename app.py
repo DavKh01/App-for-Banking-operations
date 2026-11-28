@@ -258,12 +258,18 @@ def aml_page(df: Dataset, mapping):
     customer_key = "Fragmented exchange (by customer)"
     if exchange_type and selected in (customer_key, fragmented_key):
         c1, c2, c3 = st.columns(3)
-        threshold = c1.number_input("Fragmentation threshold", min_value=1.0,
-                                    value=float(DEFAULT_EXCHANGE_THRESHOLD), step=1000.0,
-                                    key="exchange_threshold")
-        min_count = c2.number_input("Minimum transactions", min_value=2, max_value=50,
-                                    value=int(DEFAULT_EXCHANGE_MIN_COUNT), step=1,
-                                    key="exchange_min_count")
+        threshold = c1.number_input(
+            "Fragmentation threshold", min_value=1.0,
+            value=float(DEFAULT_EXCHANGE_THRESHOLD), step=1000.0,
+            key="exchange_threshold",
+            help="Խմբի ընդհանուր գումարի շեմը (օր. 3 × 90,000 = 270,000 > 100,000)։ Յուրաքանչյուր առանձին գործարք պետք է լինի ցածր այս շեմից։",
+        )
+        min_count = c2.number_input(
+            "Minimum transactions", min_value=2, max_value=50,
+            value=int(DEFAULT_EXCHANGE_MIN_COUNT), step=1,
+            key="exchange_min_count",
+            help="Նվազագույն գործարքների քանակը մեկ խմբում (3 × 90,000-ի համար դնել 3 կամ 2)։",
+        )
         if selected == fragmented_key:
             window_hours = c3.number_input("User time window (hours)", min_value=0.1, max_value=24.0,
                                            value=float(DEFAULT_EXCHANGE_WINDOW_HOURS), step=0.5,

@@ -239,7 +239,7 @@ def _exchange_fragments(src: str, mapping: Dict[str, str], doc_type_value: str,
     base = f"""
         SELECT *, abs("_amount") AS "_abs_amount"
         FROM ({src})
-        WHERE TRIM(CAST({q(type_col)} AS VARCHAR)) = {lit(doc_type_value)}
+        WHERE lower(TRIM(CAST({q(type_col)} AS VARCHAR))) = lower({lit(doc_type_value)})
           AND "_amount" IS NOT NULL
           AND abs("_amount") < {threshold!r}
     """
@@ -249,16 +249,17 @@ def _exchange_fragments(src: str, mapping: Dict[str, str], doc_type_value: str,
     if customer:
         results["Fragmented exchange (by customer)"] = query(f"""
             WITH ex AS (
-                SELECT * FROM ({base}) WHERE {q(customer)} IS NOT NULL
+                SELECT TRIM(CAST({q(customer)} AS VARCHAR)) AS "_customer", *
+                FROM ({base}) WHERE {q(customer)} IS NOT NULL
             )
-            SELECT {q(customer)} AS customer_id,
+            SELECT "_customer" AS customer_id,
                    count(*) AS transaction_count,
                    sum("_abs_amount") AS total_amount,
                    min("_abs_amount") AS min_amount,
                    max("_abs_amount") AS max_amount,
                    string_agg(printf('%,.2f', "_abs_amount"), ', ') AS amounts
             FROM ex
-            GROUP BY {q(customer)}
+            GROUP BY "_customer"
             HAVING count(*) >= {min_count} AND sum("_abs_amount") >= {threshold!r}
             ORDER BY total_amount DESC
             LIMIT 1000
