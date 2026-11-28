@@ -255,7 +255,8 @@ def aml_page(df: Dataset, mapping):
     selected = st.selectbox("AML analysis", list(results.keys()))
 
     fragmented_key = "Fragmented exchange (by user, time window)"
-    if exchange_type and selected == fragmented_key:
+    customer_key = "Fragmented exchange (by customer)"
+    if exchange_type and selected in (customer_key, fragmented_key):
         c1, c2, c3 = st.columns(3)
         threshold = c1.number_input("Fragmentation threshold", min_value=1.0,
                                     value=float(DEFAULT_EXCHANGE_THRESHOLD), step=1000.0,
@@ -263,9 +264,10 @@ def aml_page(df: Dataset, mapping):
         min_count = c2.number_input("Minimum transactions", min_value=2, max_value=50,
                                     value=int(DEFAULT_EXCHANGE_MIN_COUNT), step=1,
                                     key="exchange_min_count")
-        window_hours = c3.number_input("User time window (hours)", min_value=0.1, max_value=24.0,
-                                       value=float(DEFAULT_EXCHANGE_WINDOW_HOURS), step=0.5,
-                                       key="exchange_window_hours")
+        if selected == fragmented_key:
+            window_hours = c3.number_input("User time window (hours)", min_value=0.1, max_value=24.0,
+                                           value=float(DEFAULT_EXCHANGE_WINDOW_HOURS), step=0.5,
+                                           key="exchange_window_hours")
         results = engine.aml_indicators(
             exchange_type=exchange_type,
             exchange_threshold=threshold,
